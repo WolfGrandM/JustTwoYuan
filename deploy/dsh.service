@@ -1,0 +1,29 @@
+[Unit]
+Description=DeepSeek Harness (dsh) web agent
+Documentation=https://deepseek-harness.github.io/deepseek-harness/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dsh
+Group=dsh
+WorkingDirectory=/home/dsh/workspace
+Environment=HOME=/home/dsh
+Environment=DSH_HOME=/home/dsh/.dsh
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+Environment=DSH_WEB_HOST=127.0.0.1
+Environment=DSH_WEB_PORT=3080
+EnvironmentFile=-/etc/dsh/dsh.env
+ExecStart=/usr/local/bin/dsh web --no-open --host ${DSH_WEB_HOST} --port ${DSH_WEB_PORT}
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsh
+
+[Install]
+WantedBy=multi-user.target

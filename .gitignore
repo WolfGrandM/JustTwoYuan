@@ -1,0 +1,29 @@
+# Secrets & credentials
+*.pem
+*.key
+.env
+*.env
+!.env.example
+!*.env.example
+napcat-qr*
+.tmp_qr*
+
+# Session / runtime archives
+dsh-session-*.zip
+
+# Node
+node_modules/
+
+# Logs & runtime state
+*.log
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Runtime state & tool data (not project code)
+.dsh-acl-recovery/
+.tmp_bind.json
+.tmp_sess/
+.workbuddy/
