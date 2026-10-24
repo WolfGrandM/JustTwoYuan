@@ -1,0 +1,117 @@
+{
+  "meta": {
+    "source_file": "工作簿1.csv",
+    "parsed_at": "2026-10-24",
+    "open_questions": [
+      "OQ7 java 组桌数：CSV 第4行（60×80×74×10，有走线槽）组别为空，默认按『延续上一行』归入 java，即 java=1长桌+10标准桌=11 工位；若该行实属工业（工业=20），总数变为 38→28，需用户确认（缺口重点）",
+      "OQ8 设备台归属：EQ1/EQ2 未注明归属组，默认放公共设备区；操作面默认长边侧",
+      "OQ9 杂物柜数量：CSV 第14行为 ×4，任务书暂定写 ×1，以 CSV 为准按 4 个",
+      "OQ10 椅子数量：CSV 为『若干』，默认 ≥44（44 工位各一）+少量备用",
+      "OQ11 研究生工位用桌：默认取空余中的 6 张 65×45×80；备选 110×50×73",
+      "OQ12 展示区 4 桌来源：任务书定 4 桌不通电，默认用空余分配后剩余中的 4 张大桌（120×45、110×50×2、160×60）"
+    ],
+    "seat_count_total": 44,
+    "seat_count_note": "工业10 + java11(默认) + ai8 + 嵌入式9 = 38，研究生6（自空余补）= 44"
+  },
+  "work_groups": [
+    {
+      "id": "G-IND", "name": "工业",
+      "seats": 10,
+      "desk": { "w_cm": 80, "d_cm": 60, "h_cm": 74 },
+      "desk_layout": null,
+      "per_seat_power": "10A",
+      "cable_tray": true,
+      "note": "CSV行2：宽60 长80 高74 ×10 桌 有走线槽"
+    },
+    {
+      "id": "G-JAVA", "name": "java",
+      "seats": 11,
+      "desk": { "w_cm": 80, "d_cm": 60, "h_cm": 74 },
+      "extra_desk": { "w_cm": 120, "d_cm": 45, "h_cm": 77, "cable_tray": false, "role": "长桌（默认计入工位）" },
+      "desk_layout": null,
+      "per_seat_power": "10A",
+      "cable_tray": true,
+      "note": "CSV行3-4：45×120×77×1 无走线槽 + 60×80×74×10 有走线槽（行4组别为空，默认归 java，见 OQ7）"
+    },
+    {
+      "id": "G-AI", "name": "ai",
+      "seats": 8,
+      "desk": { "w_cm": 80, "d_cm": 60, "h_cm": 74 },
+      "desk_layout": null,
+      "per_seat_power": "10A",
+      "cable_tray": true,
+      "note": "CSV行5：×8 桌 有走线槽"
+    },
+    {
+      "id": "G-EMB", "name": "嵌入式",
+      "seats": 9,
+      "desk": { "w_cm": 80, "d_cm": 60, "h_cm": 74 },
+      "desk_layout": null,
+      "per_seat_power": "10A",
+      "cable_tray": true,
+      "note": "CSV行6：宽80 长60 高74 ×9 桌 有走线槽（与标准桌同占地）"
+    }
+  ],
+  "grad_extension": {
+    "seats": 6,
+    "source": "空余桌椅分配，不足后补",
+    "desk": { "w_cm": 65, "d_cm": 45, "h_cm": 80 },
+    "desk_assumed": true,
+    "per_seat_power": "10A",
+    "location": "西墙窗带单排展开",
+    "note": "CSV行17：研究生组『啥都没有，预留6个工位』；用桌默认 65×45×80（空余行8），见 OQ11"
+  },
+  "spare": [
+    { "kind": "desk", "w_cm": 120, "d_cm": 45, "h_cm": 77, "qty": 1, "cable_tray": false, "assigned": "display", "note": "CSV行7" },
+    { "kind": "desk", "w_cm": 65, "d_cm": 45, "h_cm": 80, "qty": 8, "cable_tray": false, "assigned": "grad_x6 + misc_x2", "note": "CSV行8" },
+    { "kind": "desk", "w_cm": 110, "d_cm": 50, "h_cm": 73, "qty": 2, "cable_tray": false, "assigned": "display", "note": "CSV行9" },
+    { "kind": "desk", "w_cm": 160, "d_cm": 60, "h_cm": 78, "qty": 1, "cable_tray": false, "assigned": "display", "note": "CSV行10" }
+  ],
+  "equipment": [
+    {
+      "id": "EQ1", "name": "设备台A",
+      "w_cm": 120, "d_cm": 60, "h_cm": 81,
+      "watts": 500, "always_on": false,
+      "owner_group": null,
+      "power_spec": "按功率配电位（10A 足够）",
+      "ops_clearance_cm": 60,
+      "note": "CSV行11：60×120×81 设备 无走线槽 500W 设备不常开；归属见 OQ8"
+    },
+    {
+      "id": "EQ2", "name": "设备台B",
+      "w_cm": 150, "d_cm": 100, "h_cm": 48,
+      "watts": 500, "always_on": false,
+      "owner_group": null,
+      "power_spec": "按功率配电位（10A 足够）",
+      "ops_clearance_cm": 60,
+      "note": "CSV行12：100×150×48 设备 无走线槽 500W 设备不常开；低矮宽台，归属见 OQ8"
+    }
+  ],
+  "storage": [
+    { "id": "S-SHELF", "kind": "架子", "w_cm": 200, "d_cm": 60, "h_cm": 160, "qty": 3, "tall": true, "avoid_window": true, "note": "CSV行13：宽60 长200 高160；用户 2026-10-24 指示布局只摆 2 个，第 3 个移库不用" },
+    { "id": "S-CAB", "kind": "杂物柜", "w_cm": 100, "d_cm": 50, "h_cm": 70, "qty": 4, "tall": false, "note": "CSV行14：宽50 长100 高70 ×4（CSV为准，任务书暂定×1，见 OQ9）" }
+  ],
+  "leisure": {
+    "target_m2": 10,
+    "flex_m2": [8, 12],
+    "items": [
+      { "name": "饮水机", "w_cm": 33, "d_cm": 33, "h_cm": 75, "power": "10A", "watts": 600, "watts_assumed": true },
+      { "name": "16A预留位", "qty": 1, "power": "16A", "note": "只预留不接负载" }
+    ],
+    "location_hint": "东墙北门（东北角门）附近",
+    "note": "兼茶水台；换水桶从最近门进出不穿工作区"
+  },
+  "display": {
+    "tables": 0,
+    "location_hint": "已取消",
+    "powered": false,
+    "viewing_space": false,
+    "note": "用户 2026-10-24 指示：不要展示位了。原 4 张展示桌退回机动台面；茶水台(65×45)归休闲区"
+  },
+  "buffer": {
+    "target_m2_range": [3, 5],
+    "location_hint": "架子附近",
+    "note": "杂物缓冲区；冗余吸收顺序：架子（垂直）→ 空余桌面 → 地面缓冲区"
+  },
+  "spare_chairs": { "qty": null, "qty_assumed_min": 44, "w_cm": 45, "d_cm": 45, "h_cm": 45, "note": "CSV行15：45×45×45 若干；见 OQ10" }
+}

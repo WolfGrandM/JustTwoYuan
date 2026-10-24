@@ -1,0 +1,276 @@
+{
+ "meta": {
+  "source_file": "工作簿1.csv",
+  "source_format": "xlsx（文件头 PK，按 xlsx 解析）",
+  "parsed_at": "2026-10-24",
+  "coordinate_system": "原点=西南内墙角，x 向东 0-900，y 向北 0-1320，单位 cm",
+  "open_questions": [
+   "OQ1 配电箱位置与规格：CSV 全文未提及（缺口重点）",
+   "OQ2 电位孔规格与每孔点位数：CSV 只给位置，未给 10A/16A 与单/双孔",
+   "OQ3 饮水机功率：未知，负荷内检默认 600W",
+   "OQ4 窗户 24cm 差：三窗+间隔+两端 54 合计 1296 ≠ 1320，默认均摊进两个 150 间隙（→162），待现场核对",
+   "OQ5 门开启方向与铰链侧：未知，默认内开、铰链靠各自就近墙垛（东北门铰北端、东南门铰南端）",
+   "OQ6 窗台高度：未知，默认 90cm"
+  ],
+  "resolved_checks": [
+   "任务书核对项A（门方位）：CSV 原文『（东墙-1320）有前后两个门无窗，宽高100*200，分别距离北墙和南墙55』→ 两门均在东长墙两端（东北门/东南门），与任务书『北墙门口指东北角门』预判一致，确认无方位矛盾",
+   "任务书核对项B（窗 24cm 差）：复算确认 54+296+150+296+150+296+54=1296，差 24cm；见 OQ4 默认处理"
+  ]
+ },
+ "room": {
+  "width_x_cm": 900,
+  "depth_y_cm": 1320,
+  "height_cm": 250,
+  "area_m2": 118.8,
+  "floors": 1,
+  "csv_row": 18
+ },
+ "openings": [
+  {
+   "id": "D-NE",
+   "type": "door",
+   "wall": "east",
+   "seg_room_xy": [
+    [
+     900,
+     1165
+    ],
+    [
+     900,
+     1265
+    ]
+   ],
+   "width_cm": 100,
+   "height_cm": 200,
+   "orig_desc": "距离北墙55",
+   "swing": "inward",
+   "swing_assumed": true,
+   "hinge": "north",
+   "clearance_arc_cm": 100,
+   "csv_row": 19
+  },
+  {
+   "id": "D-SE",
+   "type": "door",
+   "wall": "east",
+   "seg_room_xy": [
+    [
+     900,
+     55
+    ],
+    [
+     900,
+     155
+    ]
+   ],
+   "width_cm": 100,
+   "height_cm": 200,
+   "orig_desc": "距离南墙55",
+   "swing": "inward",
+   "swing_assumed": true,
+   "hinge": "south",
+   "clearance_arc_cm": 100,
+   "csv_row": 19,
+   "normally_closed": true,
+   "note": "用户明确：后门（东南门）常闭不开，布局当其不存在；回转区允许布置（仍保持门体物理可达）"
+  },
+  {
+   "id": "W-N",
+   "type": "window",
+   "wall": "west",
+   "seg_room_xy": [
+    [
+     0,
+     970
+    ],
+    [
+     0,
+     1266
+    ]
+   ],
+   "width_cm": 296,
+   "height_cm": 180,
+   "sill_height_cm": 90,
+   "sill_assumed": true,
+   "orig_desc": "1窗距离北墙54",
+   "opens_to": "west",
+   "csv_row": 20
+  },
+  {
+   "id": "W-M",
+   "type": "window",
+   "wall": "west",
+   "seg_room_xy": [
+    [
+     0,
+     512
+    ],
+    [
+     0,
+     808
+    ]
+   ],
+   "width_cm": 296,
+   "height_cm": 180,
+   "sill_height_cm": 90,
+   "sill_assumed": true,
+   "orig_desc": "2窗离1窗150（24cm差已均摊，原文间隙150→按162计）",
+   "opens_to": "west",
+   "csv_row": 20
+  },
+  {
+   "id": "W-S",
+   "type": "window",
+   "wall": "west",
+   "seg_room_xy": [
+    [
+     0,
+     54
+    ],
+    [
+     0,
+     350
+    ]
+   ],
+   "width_cm": 296,
+   "height_cm": 180,
+   "sill_height_cm": 90,
+   "sill_assumed": true,
+   "orig_desc": "3窗离2窗150且距离南54（24cm差已均摊）",
+   "opens_to": "west",
+   "csv_row": 20
+  }
+ ],
+ "power": {
+  "outlet_pockets": [
+   {
+    "id": "P-E1",
+    "wall": "east",
+    "xy": [
+     900,
+     870
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "东墙1孔距离北墙450",
+    "csv_row": 19
+   },
+   {
+    "id": "P-E2",
+    "wall": "east",
+    "xy": [
+     900,
+     585
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "东墙2孔距离1孔285",
+    "csv_row": 19
+   },
+   {
+    "id": "P-W1",
+    "wall": "west",
+    "xy": [
+     0,
+     905
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "西墙1孔距离北墙415（位于W-N与W-M之间墙垛）",
+    "csv_row": 20
+   },
+   {
+    "id": "P-W2",
+    "wall": "west",
+    "xy": [
+     0,
+     540
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "西墙2孔距离1孔365（位于W-M窗下）",
+    "csv_row": 20
+   },
+   {
+    "id": "P-S1",
+    "wall": "south",
+    "xy": [
+     240,
+     0
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "南墙1孔距离西墙240",
+    "csv_row": 21
+   },
+   {
+    "id": "P-S2",
+    "wall": "south",
+    "xy": [
+     500,
+     0
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "南墙2孔距离1孔260",
+    "csv_row": 21
+   },
+   {
+    "id": "P-N1",
+    "wall": "north",
+    "xy": [
+     660,
+     1320
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "北墙1孔距离东墙240",
+    "csv_row": 22
+   },
+   {
+    "id": "P-N2",
+    "wall": "north",
+    "xy": [
+     420,
+     1320
+    ],
+    "spec": "10A",
+    "spec_assumed": true,
+    "pocket_count": 1,
+    "count_assumed": true,
+    "orig_desc": "北墙2孔距离1孔240（默认向西排布）",
+    "csv_row": 22
+   }
+  ],
+  "distribution_box": null,
+  "distribution_box_note": "用户明确（2026-10-24）：配电箱等电力配件由电工统一考虑，布局不建模、不预留净空；电位孔仅保留物理位置作参考点，规格/容量/延线均不判定"
+ },
+ "electrical": {
+  "always_on": [
+   {
+    "name": "饮水机",
+    "watts": 600,
+    "watts_assumed": true,
+    "note": "OQ3：CSV 未给功率，默认 600W"
+   }
+  ],
+  "equipment_note": "CSV 原文两台设备均标注『500W / 设备不常开』→ 设备台不计入常开负载（覆盖任务书『常开负载=饮水机+设备台』的暂定说法，以数据文件为准）",
+  "demand_basis": "平时在室 ≤10 人；工位负载同时率 0.5；单 10A 电位孔折算功率上限 1500W、带工位 ≤4 个",
+  "cooling": "无空调无风扇",
+  "grad_power": "研究生区按标准工位配电（10A/工位，与五组一致）"
+ }
+}

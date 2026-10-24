@@ -1,0 +1,1725 @@
+{
+ "candidate_id": "C",
+ "name": "北移开放变体（大开放北区）",
+ "concept": "岛式整体北移（y170..970）：南端让出 110cm 展示观看带，北部形成 320×280 开放休闲/设备区；全部 44 工位可由现有 8 孔分区馈电，无需电工新增。",
+ "placements": [
+  {
+   "asset_id": "G-GRAD-1",
+   "kind": "desk",
+   "group": "GRAD",
+   "x": 0,
+   "y": 546,
+   "w": 45,
+   "d": 65,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-GRAD-C1",
+   "kind": "chair",
+   "group": "GRAD",
+   "x": 45,
+   "y": 556,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-GRAD-2",
+   "kind": "desk",
+   "group": "GRAD",
+   "x": 0,
+   "y": 618,
+   "w": 45,
+   "d": 65,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-GRAD-C2",
+   "kind": "chair",
+   "group": "GRAD",
+   "x": 45,
+   "y": 628,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-GRAD-3",
+   "kind": "desk",
+   "group": "GRAD",
+   "x": 0,
+   "y": 690,
+   "w": 45,
+   "d": 65,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-GRAD-C3",
+   "kind": "chair",
+   "group": "GRAD",
+   "x": 45,
+   "y": 700,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-GRAD-4",
+   "kind": "desk",
+   "group": "GRAD",
+   "x": 0,
+   "y": 762,
+   "w": 45,
+   "d": 65,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-GRAD-C4",
+   "kind": "chair",
+   "group": "GRAD",
+   "x": 45,
+   "y": 772,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-GRAD-5",
+   "kind": "desk",
+   "group": "GRAD",
+   "x": 0,
+   "y": 834,
+   "w": 45,
+   "d": 65,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-GRAD-C5",
+   "kind": "chair",
+   "group": "GRAD",
+   "x": 45,
+   "y": 844,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-GRAD-6",
+   "kind": "desk",
+   "group": "GRAD",
+   "x": 0,
+   "y": 911,
+   "w": 45,
+   "d": 65,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-GRAD-C6",
+   "kind": "chair",
+   "group": "GRAD",
+   "x": 45,
+   "y": 921,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-1",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 170,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C1",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 187,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-2",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 250,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C2",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 267,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-3",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 330,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C3",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 347,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-4",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 410,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C4",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 427,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-5",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 490,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C5",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 507,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-6",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 570,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C6",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 587,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-7",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 650,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C7",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 667,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-8",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 730,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C8",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 747,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-9",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 810,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C9",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 827,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-IND-10",
+   "kind": "desk",
+   "group": "IND",
+   "x": 195,
+   "y": 890,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-IND-C10",
+   "kind": "chair",
+   "group": "IND",
+   "x": 150,
+   "y": 907,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-1",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 250,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C1",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 267,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-2",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 330,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C2",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 347,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-3",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 410,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C3",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 427,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-4",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 490,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C4",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 507,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-5",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 570,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C5",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 587,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-6",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 650,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C6",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 667,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-7",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 730,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C7",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 747,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-8",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 810,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C8",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 827,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-EMB-9",
+   "kind": "desk",
+   "group": "EMB",
+   "x": 255,
+   "y": 890,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-EMB-C9",
+   "kind": "chair",
+   "group": "EMB",
+   "x": 315,
+   "y": 907,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-1",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 170,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C1",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 187,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-2",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 250,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C2",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 267,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-3",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 330,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C3",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 347,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-4",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 410,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C4",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 427,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-5",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 490,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C5",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 507,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-6",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 570,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C6",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 587,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-7",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 650,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C7",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 667,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-8",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 730,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C8",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 747,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-9",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 810,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C9",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 827,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-10",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 890,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-C10",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 907,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-JAVA-L",
+   "kind": "desk",
+   "group": "JAVA",
+   "x": 485,
+   "y": 50,
+   "w": 45,
+   "d": 120,
+   "rot": 90,
+   "seat_dir": "E"
+  },
+  {
+   "asset_id": "G-JAVA-LC",
+   "kind": "chair",
+   "group": "JAVA",
+   "x": 440,
+   "y": 70,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-1",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 330,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C1",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 347,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-2",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 410,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C2",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 427,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-3",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 490,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C3",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 507,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-4",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 570,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C4",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 587,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-5",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 650,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C5",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 667,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-6",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 730,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C6",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 747,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-7",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 810,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C7",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 827,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "G-AI-8",
+   "kind": "desk",
+   "group": "AI",
+   "x": 545,
+   "y": 890,
+   "w": 60,
+   "d": 80,
+   "rot": 90,
+   "seat_dir": "W"
+  },
+  {
+   "asset_id": "G-AI-C8",
+   "kind": "chair",
+   "group": "AI",
+   "x": 605,
+   "y": 907,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "S-SHELF-1",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 130,
+   "y": 1260,
+   "w": 200,
+   "d": 60,
+   "rot": 0,
+   "tall": true
+  },
+  {
+   "asset_id": "S-SHELF-2",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 426,
+   "y": 1260,
+   "w": 200,
+   "d": 60,
+   "rot": 0,
+   "tall": true
+  },
+  {
+   "asset_id": "S-SHELF-3",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 60,
+   "y": 970,
+   "w": 60,
+   "d": 200,
+   "rot": 90,
+   "tall": true
+  },
+  {
+   "asset_id": "S-CAB-1",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 15,
+   "y": 0,
+   "w": 100,
+   "d": 50,
+   "rot": 0
+  },
+  {
+   "asset_id": "S-CAB-2",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 125,
+   "y": 0,
+   "w": 100,
+   "d": 50,
+   "rot": 0
+  },
+  {
+   "asset_id": "S-CAB-3",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 20,
+   "y": 1260,
+   "w": 100,
+   "d": 50,
+   "rot": 0
+  },
+  {
+   "asset_id": "S-CAB-4",
+   "kind": "storage",
+   "group": "STORE",
+   "x": 0,
+   "y": 1180,
+   "w": 100,
+   "d": 50,
+   "rot": 0
+  },
+  {
+   "asset_id": "EQ-1",
+   "kind": "equipment",
+   "group": "EQ",
+   "x": 430,
+   "y": 1000,
+   "w": 120,
+   "d": 60,
+   "rot": 0,
+   "ops_face": "N"
+  },
+  {
+   "asset_id": "EQ-2",
+   "kind": "equipment",
+   "group": "EQ",
+   "x": 310,
+   "y": 1000,
+   "w": 100,
+   "d": 150,
+   "rot": 90,
+   "ops_face": "W"
+  },
+  {
+   "asset_id": "WATER",
+   "kind": "leisure",
+   "group": "LEIS",
+   "x": 855,
+   "y": 990,
+   "w": 33,
+   "d": 33,
+   "rot": 0
+  },
+  {
+   "asset_id": "LEIS-S1",
+   "kind": "chair",
+   "group": "LEIS",
+   "x": 790,
+   "y": 1000,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "LEIS-S2",
+   "kind": "chair",
+   "group": "LEIS",
+   "x": 790,
+   "y": 1080,
+   "w": 45,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "DISP-T1",
+   "kind": "desk",
+   "group": "DISPLAY",
+   "x": 230,
+   "y": 0,
+   "w": 120,
+   "d": 45,
+   "rot": 0
+  },
+  {
+   "asset_id": "DISP-T2",
+   "kind": "desk",
+   "group": "DISPLAY",
+   "x": 361,
+   "y": 0,
+   "w": 110,
+   "d": 50,
+   "rot": 0
+  },
+  {
+   "asset_id": "DISP-T3",
+   "kind": "desk",
+   "group": "DISPLAY",
+   "x": 482,
+   "y": 0,
+   "w": 110,
+   "d": 50,
+   "rot": 0
+  },
+  {
+   "asset_id": "DISP-T4",
+   "kind": "desk",
+   "group": "DISPLAY",
+   "x": 603,
+   "y": 0,
+   "w": 160,
+   "d": 60,
+   "rot": 0
+  }
+ ],
+ "zones": [
+  {
+   "id": "Z-WORK",
+   "type": "work",
+   "label": "四组工位岛",
+   "polygon": [
+    [
+     150,
+     50
+    ],
+    [
+     650,
+     50
+    ],
+    [
+     650,
+     1070
+    ],
+    [
+     150,
+     1070
+    ]
+   ]
+  },
+  {
+   "id": "Z-GRAD",
+   "type": "grad",
+   "label": "研究生区(西墙窗带)",
+   "polygon": [
+    [
+     0,
+     515
+    ],
+    [
+     150,
+     515
+    ],
+    [
+     150,
+     1000
+    ],
+    [
+     0,
+     1000
+    ]
+   ]
+  },
+  {
+   "id": "Z-LEIS",
+   "type": "leisure",
+   "label": "休闲/茶水 9.0㎡",
+   "polygon": [
+    [
+     580,
+     980
+    ],
+    [
+     900,
+     980
+    ],
+    [
+     900,
+     1260
+    ],
+    [
+     580,
+     1260
+    ]
+   ]
+  },
+  {
+   "id": "Z-DISP",
+   "type": "display",
+   "label": "成果展示(观看带在南侧过道)",
+   "polygon": [
+    [
+     230,
+     0
+    ],
+    [
+     780,
+     0
+    ],
+    [
+     780,
+     50
+    ],
+    [
+     230,
+     50
+    ]
+   ]
+  },
+  {
+   "id": "Z-EQ",
+   "type": "equipment",
+   "label": "公共设备区",
+   "polygon": [
+    [
+     250,
+     990
+    ],
+    [
+     540,
+     990
+    ],
+    [
+     540,
+     1160
+    ],
+    [
+     250,
+     1160
+    ]
+   ]
+  },
+  {
+   "id": "Z-STORE",
+   "type": "storage",
+   "label": "存储(北墙)",
+   "polygon": [
+    [
+     130,
+     1260
+    ],
+    [
+     626,
+     1260
+    ],
+    [
+     626,
+     1320
+    ],
+    [
+     130,
+     1320
+    ]
+   ]
+  },
+  {
+   "id": "Z-BUF",
+   "type": "reserved",
+   "label": "杂物缓冲 3.3㎡",
+   "polygon": [
+    [
+     230,
+     1160
+    ],
+    [
+     560,
+     1160
+    ],
+    [
+     560,
+     1260
+    ],
+    [
+     230,
+     1260
+    ]
+   ]
+  }
+ ],
+ "corridors": [
+  {
+   "id": "M1",
+   "role": "main",
+   "rect": [
+    780,
+    1130,
+    900,
+    1265
+   ],
+   "note": "东北门通道段"
+  },
+  {
+   "id": "M2",
+   "role": "main",
+   "rect": [
+    560,
+    980,
+    780,
+    1250
+   ],
+   "note": "北开放区主通道"
+  },
+  {
+   "id": "M3",
+   "role": "main",
+   "rect": [
+    650,
+    60,
+    780,
+    970
+   ],
+   "note": "东纵主通道 130"
+  },
+  {
+   "id": "M4",
+   "role": "door_approach",
+   "rect": [
+    780,
+    55,
+    900,
+    155
+   ],
+   "note": "东南门进深段(门宽100)"
+  },
+  {
+   "id": "S1c",
+   "role": "secondary",
+   "rect": [
+    360,
+    170,
+    440,
+    970
+   ],
+   "note": "岛间次过道 80"
+  },
+  {
+   "id": "S2c",
+   "role": "secondary",
+   "rect": [
+    90,
+    515,
+    150,
+    1000
+   ],
+   "note": "研究生过道 60+"
+  },
+  {
+   "id": "S3c",
+   "role": "secondary",
+   "rect": [
+    340,
+    60,
+    440,
+    170
+   ],
+   "note": "展示观看带 100×110"
+  }
+ ],
+ "rows": [
+  {
+   "row_id": "R-GRAD",
+   "seats": [
+    "G-GRAD-1",
+    "G-GRAD-2",
+    "G-GRAD-3",
+    "G-GRAD-4",
+    "G-GRAD-5",
+    "G-GRAD-6"
+   ],
+   "ends": [
+    [
+     22,
+     546
+    ],
+    [
+     22,
+     976
+    ]
+   ],
+   "prefs": [
+    "P-W2",
+    "P-W1"
+   ],
+   "slot_feed": true,
+   "feeds": [
+    {
+     "pocket": "P-W2",
+     "seats": [
+      "G-GRAD-1",
+      "G-GRAD-2",
+      "G-GRAD-3",
+      "G-GRAD-4"
+     ],
+     "feed_len_cm": 28,
+     "method": "现有电位孔延线(槽位分接)"
+    },
+    {
+     "pocket": "P-W1",
+     "seats": [
+      "G-GRAD-5",
+      "G-GRAD-6"
+     ],
+     "feed_len_cm": 93,
+     "method": "现有电位孔延线(槽位分接)"
+    }
+   ],
+   "seats_unfed": []
+  },
+  {
+   "row_id": "R-JLONG",
+   "seats": [
+    "G-JAVA-L"
+   ],
+   "ends": [
+    [
+     507,
+     50
+    ],
+    [
+     507,
+     170
+    ]
+   ],
+   "prefs": [
+    "P-S2",
+    "P-S1",
+    "P-N2"
+   ],
+   "feeds": [
+    {
+     "pocket": "P-S2",
+     "seats": [
+      "G-JAVA-L"
+     ],
+     "feed_len_cm": 57,
+     "method": "现有电位孔延线(行端馈电)"
+    }
+   ],
+   "seats_unfed": []
+  },
+  {
+   "row_id": "R-IND",
+   "seats": [
+    "G-IND-1",
+    "G-IND-2",
+    "G-IND-3",
+    "G-IND-4",
+    "G-IND-5",
+    "G-IND-6",
+    "G-IND-7",
+    "G-IND-8",
+    "G-IND-9",
+    "G-IND-10"
+   ],
+   "ends": [
+    [
+     225,
+     170
+    ],
+    [
+     225,
+     970
+    ]
+   ],
+   "prefs": [
+    "P-S1",
+    "P-S2",
+    "P-N2"
+   ],
+   "feeds": [
+    {
+     "pocket": "P-S1",
+     "seats": [
+      "G-IND-1",
+      "G-IND-2",
+      "G-IND-3",
+      "G-IND-4",
+      "G-IND-5",
+      "G-IND-6",
+      "G-IND-7",
+      "G-IND-8"
+     ],
+     "feed_len_cm": 185,
+     "method": "现有电位孔延线(行端馈电)"
+    },
+    {
+     "pocket": "P-S2",
+     "seats": [
+      "G-IND-9",
+      "G-IND-10"
+     ],
+     "feed_len_cm": 445,
+     "method": "现有电位孔延线(行端馈电)"
+    }
+   ],
+   "seats_unfed": []
+  },
+  {
+   "row_id": "R-EMB",
+   "seats": [
+    "G-EMB-1",
+    "G-EMB-2",
+    "G-EMB-3",
+    "G-EMB-4",
+    "G-EMB-5",
+    "G-EMB-6",
+    "G-EMB-7",
+    "G-EMB-8",
+    "G-EMB-9"
+   ],
+   "ends": [
+    [
+     285,
+     250
+    ],
+    [
+     285,
+     970
+    ]
+   ],
+   "prefs": [
+    "P-S2",
+    "P-N2",
+    "P-S1"
+   ],
+   "feeds": [
+    {
+     "pocket": "P-S2",
+     "seats": [
+      "G-EMB-1",
+      "G-EMB-2",
+      "G-EMB-3",
+      "G-EMB-4",
+      "G-EMB-5"
+     ],
+     "feed_len_cm": 465,
+     "method": "现有电位孔延线(行端馈电)"
+    },
+    {
+     "pocket": "P-N2",
+     "seats": [
+      "G-EMB-6",
+      "G-EMB-7",
+      "G-EMB-8",
+      "G-EMB-9"
+     ],
+     "feed_len_cm": 485,
+     "method": "现有电位孔延线(行端馈电)"
+    }
+   ],
+   "seats_unfed": []
+  },
+  {
+   "row_id": "R-JAVA",
+   "seats": [
+    "G-JAVA-1",
+    "G-JAVA-2",
+    "G-JAVA-3",
+    "G-JAVA-4",
+    "G-JAVA-5",
+    "G-JAVA-6",
+    "G-JAVA-7",
+    "G-JAVA-8",
+    "G-JAVA-9",
+    "G-JAVA-10"
+   ],
+   "ends": [
+    [
+     515,
+     170
+    ],
+    [
+     515,
+     970
+    ]
+   ],
+   "prefs": [
+    "P-N2",
+    "P-E1",
+    "P-N1"
+   ],
+   "feeds": [
+    {
+     "pocket": "P-N2",
+     "seats": [
+      "G-JAVA-1",
+      "G-JAVA-2",
+      "G-JAVA-3",
+      "G-JAVA-4"
+     ],
+     "feed_len_cm": 445,
+     "method": "现有电位孔延线(行端馈电)"
+    },
+    {
+     "pocket": "P-E1",
+     "seats": [
+      "G-JAVA-5",
+      "G-JAVA-6",
+      "G-JAVA-7",
+      "G-JAVA-8",
+      "G-JAVA-9",
+      "G-JAVA-10"
+     ],
+     "feed_len_cm": 485,
+     "method": "现有电位孔延线(行端馈电)"
+    }
+   ],
+   "seats_unfed": []
+  },
+  {
+   "row_id": "R-AI",
+   "seats": [
+    "G-AI-1",
+    "G-AI-2",
+    "G-AI-3",
+    "G-AI-4",
+    "G-AI-5",
+    "G-AI-6",
+    "G-AI-7",
+    "G-AI-8"
+   ],
+   "ends": [
+    [
+     575,
+     330
+    ],
+    [
+     575,
+     970
+    ]
+   ],
+   "prefs": [
+    "P-N1",
+    "P-E2",
+    "P-E1"
+   ],
+   "feeds": [
+    {
+     "pocket": "P-N1",
+     "seats": [
+      "G-AI-1",
+      "G-AI-2",
+      "G-AI-3",
+      "G-AI-4",
+      "G-AI-5",
+      "G-AI-6",
+      "G-AI-7",
+      "G-AI-8"
+     ],
+     "feed_len_cm": 435,
+     "method": "现有电位孔延线(行端馈电)"
+    }
+   ],
+   "seats_unfed": []
+  }
+ ],
+ "misc_unplaced": [
+  "空余剩 2×65×45 作机动杂物台面（不占位）",
+  "椅子若干按工位+2 配"
+ ],
+ "pocket_usage": {
+  "P-E1": {
+   "seats": [
+    "G-JAVA-5",
+    "G-JAVA-6",
+    "G-JAVA-7",
+    "G-JAVA-8",
+    "G-JAVA-9",
+    "G-JAVA-10"
+   ],
+   "cap": 6
+  },
+  "P-E2": {
+   "seats": [],
+   "cap": 6
+  },
+  "P-W1": {
+   "seats": [
+    "G-GRAD-5",
+    "G-GRAD-6"
+   ],
+   "cap": 8
+  },
+  "P-W2": {
+   "seats": [
+    "G-GRAD-1",
+    "G-GRAD-2",
+    "G-GRAD-3",
+    "G-GRAD-4"
+   ],
+   "cap": 8
+  },
+  "P-S1": {
+   "seats": [
+    "G-IND-1",
+    "G-IND-2",
+    "G-IND-3",
+    "G-IND-4",
+    "G-IND-5",
+    "G-IND-6",
+    "G-IND-7",
+    "G-IND-8"
+   ],
+   "cap": 8
+  },
+  "P-S2": {
+   "seats": [
+    "G-JAVA-L",
+    "G-IND-9",
+    "G-IND-10",
+    "G-EMB-1",
+    "G-EMB-2",
+    "G-EMB-3",
+    "G-EMB-4",
+    "G-EMB-5"
+   ],
+   "cap": 8
+  },
+  "P-N1": {
+   "seats": [
+    "G-AI-1",
+    "G-AI-2",
+    "G-AI-3",
+    "G-AI-4",
+    "G-AI-5",
+    "G-AI-6",
+    "G-AI-7",
+    "G-AI-8"
+   ],
+   "cap": 8
+  },
+  "P-N2": {
+   "seats": [
+    "G-EMB-6",
+    "G-EMB-7",
+    "G-EMB-8",
+    "G-EMB-9",
+    "G-JAVA-1",
+    "G-JAVA-2",
+    "G-JAVA-3",
+    "G-JAVA-4"
+   ],
+   "cap": 8
+  }
+ }
+}
