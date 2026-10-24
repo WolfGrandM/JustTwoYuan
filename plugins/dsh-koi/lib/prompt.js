@@ -63,12 +63,12 @@ export function buildPredictPrompt({ gameKey, cfg, history, issue, outPath, late
     '【交卷方式 —— 最重要的部分】',
     '把结果用 shell 写进这个文件（存在即可，内容必须是合法 JSON，字段一个不能少）：',
     `  ${outPath}`,
-    'JSON 结构（严格照抄字段名）：',
+    'JSON 结构（严格照抄字段名，顶层带 schemaVersion）：',
     gameKey === 'ssq'
-      ? '  {"issue":"' + issue + '","picks":{"red":[8个整数],"blue":1个整数},"message":"给主人的完整正文"}'
+      ? '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"red":[8个整数],"blue":1个整数},"message":"给主人的完整正文"}'
       : gameKey === 'dlt'
-        ? '  {"issue":"' + issue + '","picks":{"front":[7个整数],"back":[2个整数]},"message":"给主人的完整正文"}'
-        : '  {"issue":"' + issue + '","picks":{"digits":[3个整数]},"message":"给主人的完整正文"}',
+        ? '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"front":[7个整数],"back":[2个整数]},"message":"给主人的完整正文"}'
+        : '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"digits":[3个整数]},"message":"给主人的完整正文"}',
     '写文件示例（heredoc 原样写入）：',
     `  cat > '${outPath}' <<'JSON'`,
     '  { …你的 JSON… }',

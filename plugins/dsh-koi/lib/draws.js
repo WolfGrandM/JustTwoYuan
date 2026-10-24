@@ -261,18 +261,33 @@ export function emptyLedger() { return { entries: [] } }
 
 export function appendLedgerEntry(ledger, entry) {
   // entry: { at, game, issue, date, kind:'daily', cost, prize, bets, grades }
+  // v1.1（C1/ADR-10）：追加模型 —— entryType 缺省 'main'（旧数据零迁移），
+  // supplement（补判）与 reversal（休市作废冲销）带 ref 指向主条目，任何结清只追加不改写。
   const l = ledger && Array.isArray(ledger.entries) ? ledger : emptyLedger()
   l.entries.push(entry)
   return l
 }
 
+/**
+ * 账本合计（v1.1 扩展口径，C1/FR-001 —— 唯一改动的既有聚合函数）：
+ *   voided 集   = reversal 条目 ref 键集（game|issue|date）
+ *   聚合集      =（非 reversal 且未被作废的 main）∪ supplement
+ *   cost 求和于 main、prize 求和于 main∪supplement、期数按 main 计
+ * 无任何新字段的旧文件输出与 v1.0 实现逐位一致（阶段B 21/21 模拟 + 本仓库单测双重验证）。
+ */
 export function ledgerTotals(ledger) {
-  const es = (ledger && Array.isArray(ledger.entries) ? ledger.entries : [])
+  const all = (ledger && Array.isArray(ledger.entries) ? ledger.entries : [])
     .filter((e) => e.kind !== 'quickpick')
-  const cost = es.reduce((s, e) => s + Number(e.cost ?? 0), 0)
-  const prize = es.reduce((s, e) => s + Number(e.prize ?? 0), 0)
-  const draws = es.length
-  const best = es.filter((e) => Number(e.prize ?? 0) > 0)
+  const voided = new Set(all
+    .filter((e) => e.entryType === 'reversal' && e.ref)
+    .map((e) => `${e.ref.game}|${e.ref.issue}|${e.ref.date}`))
+  const main = all.filter((e) => (e.entryType ?? 'main') === 'main'
+    && !voided.has(`${e.game}|${e.issue}|${e.date}`))
+  const agg = [...main, ...all.filter((e) => e.entryType === 'supplement')]
+  const cost = main.reduce((s, e) => s + Number(e.cost ?? 0), 0)
+  const prize = agg.reduce((s, e) => s + Number(e.prize ?? 0), 0)
+  const draws = main.length
+  const best = agg.filter((e) => Number(e.prize ?? 0) > 0)
     .sort((a, b) => Number(b.prize) - Number(a.prize))[0] ?? null
   return { cost, prize, net: prize - cost, draws, best }
 }
