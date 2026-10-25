@@ -17,6 +17,7 @@ export const GAMES = {
     key: 'ssq', name: '双色球', emoji: '🔴',
     drawDays: [0, 2, 4],
     drawTimeText: '21:15 开奖 · 20:00 停售',
+    drawAt: '21:15',                      // ⚠M 结构化开奖时刻（市场版加法，供 predictAt 校验；drawTimeText 保留展示用）
     redMax: 33, redPick: 6, blueMax: 16, bluePick: 1,
     complex: { red: 8, blue: 1 },        // 主人定的复式规格：红8+蓝1 = C(8,6)×1 = 28 注 × 2 元 = 56 元
     unitStake: 2,
@@ -25,6 +26,7 @@ export const GAMES = {
     key: 'dlt', name: '大乐透', emoji: '🐰',
     drawDays: [1, 3, 6],
     drawTimeText: '21:25 开奖 · 20:00 停售',
+    drawAt: '21:25',                      // ⚠M 结构化开奖时刻（市场版加法）
     frontMax: 35, frontPick: 5, backMax: 12, backPick: 2,
     complex: { front: 7, back: 2 },      // 前7+后2 = C(7,5)×C(2,2) = 21 注 × 2 元 = 42 元
     unitStake: 2,
@@ -33,6 +35,7 @@ export const GAMES = {
     key: 'p3', name: '排列三', emoji: '🎯',
     drawDays: [0, 1, 2, 3, 4, 5, 6],
     drawTimeText: '21:25 开奖 · 20:00 停售',
+    drawAt: '21:25',                      // ⚠M 结构化开奖时刻（市场版加法）
     digits: 3,                           // 直选一注，2 元，中 1040 元
     unitStake: 2,
   },

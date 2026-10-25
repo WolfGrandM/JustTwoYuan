@@ -4,13 +4,21 @@
  * 设计要点：
  *   · 数据包直接嵌进提示词（她不用自己跑抓数命令，醒来即研究，2–4 分钟收工）
  *   · 输出走【文件契约】：她把结构化 JSON 写进会话目录里的约定文件名，
- *     调度器读文件 → validatePicks 硬校验 → 不合法重试 → 还不行随机兜底。
+ *     调度器读文件 → validateTierPicks 硬校验 → 不合法重试 → 还不行随机兜底。
  *     绝不解析自由文本 ✓（这是她不会哑火的保证）
  *   · 明令禁止：不许自己发消息、不许动会话目录外的文件（她虽然 danger-full-access，
- *     但提示词里说清楚 + 她没有 QQ 发送工具，双保险）
+ *     但提示词里说清楚 + 她没有发送工具，双保险）
+ *
+ * 市场版（FR-1009/FR-1010/BC-108）：
+ *   · specText 档位感知（tiers 注入；tier 缺省时等价旧规格——向后兼容）；
+ *   · picks 契约新增 summary 字段（≤100 字结构化摘要，chatty 档用；非事后删减）；
+ *   · 力度杠杆参数化（historyTail/正文字数档/自检段三维，leversFor；四档三元组互异）；
+ *   · 无概率宣称基调句（BC-112）。
  */
 import { GAMES, stakesOf } from './draws.js'
 import { dataPack } from './stats.js'
+import { tierById, tierStakes } from './tiers.js'
+import { leversFor } from './usage.js'
 
 export const DEFAULT_PERSONA = [
   '你叫「锦鲤」，是主人养的第二条鱼（隔壁还有一条刷 B 站的鲸鱼，别串台）。',
@@ -21,6 +29,7 @@ export const DEFAULT_PERSONA = [
 
 const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
+// v1 规格文案（tier 缺省时的等价旧规格——stats.test.mjs 快照锚点）
 const specText = (gameKey) => {
   const g = GAMES[gameKey]
   const s = stakesOf(gameKey)
@@ -29,56 +38,108 @@ const specText = (gameKey) => {
   return `直选一注：三位数 0–9（百位-十位-个位，如 3-7-1），投注额 2 元`
 }
 
+// 档位感知规格文案（结构随档：红/蓝/前/后个数、p3 多注组）
+const specTextTier = (t) => {
+  const g = GAMES[t.game]
+  const s = tierStakes(t)
+  if (t.game === 'ssq') {
+    const blueText = t.blue === 1 ? `1–${g.blueMax} 里选 1 个蓝球` : `1–${g.blueMax} 里选 ${t.blue} 个不同的蓝球`
+    return `复式：从 1–${g.redMax} 里选 ${t.red} 个红球 + ${blueText}（自动拆成 ${s.bets} 注，投注额 ${s.cost} 元）`
+  }
+  if (t.game === 'dlt') return `复式：从 1–${g.frontMax} 里选 ${t.front} 个前区号 + 1–${g.backMax} 里选 ${t.back} 个后区号（自动拆成 ${s.bets} 注，投注额 ${s.cost} 元）`
+  if (t.units === 1) return `直选一注：三位数 0–9（百位-十位-个位，如 3-7-1），投注额 2 元`
+  return `直选单式 ×${t.units}：写 ${t.units} 组三位数（每组 0–9，百位-十位-个位，组与组不能重复），共 ${s.bets} 注 / ${s.cost} 元`
+}
+
+// 号码写法示例（档位感知）
+const picksHint = (t, gameKey) => {
+  if (gameKey === 'ssq') return t.blue === 1
+    ? `红球 ${t.red} 个 + 蓝球 1 个（比如「红 03 07 12 18 25 29 31 33 + 蓝 09」按档位个数给）`
+    : `红球 ${t.red} 个 + 蓝球 2 个（比如「红 … + 蓝 09 12」）`
+  if (gameKey === 'dlt') return `前区 ${t.front} 个 + 后区 ${t.back} 个`
+  return t.units === 1 ? '百位-十位-个位（比如「6-4-7」）' : `${t.units} 组三位数（比如「6-4-7 / 3-1-9」）`
+}
+
+// picks JSON 契约示例（档位感知 + summary 字段，FR-1010）
+const contractLine = (t, gameKey, issue) => {
+  const picks = gameKey === 'ssq'
+    ? t.blue === 1
+      ? `"picks":{"red":[${t.red}个整数],"blue":1个整数}`
+      : `"picks":{"red":[${t.red}个整数],"blue":[2个整数]}`
+    : gameKey === 'dlt'
+      ? `"picks":{"front":[${t.front}个整数],"back":[${t.back}个整数]}`
+      : t.units === 1 ? `"picks":{"digits":[3个整数]}` : `"picks":{"digits":[[3个整数],…共${t.units}组]}`
+  return `  {"schemaVersion":1,"issue":"${issue}",${picks},"message":"给主人的完整正文","summary":"≤100字的一句话摘要（不得宣称任何中奖概率提升）"}`
+}
+
 /**
  * 组装唤醒提示词。
- * @param opts { gameKey, cfg, history, issue, outPath, late }
+ * @param opts { gameKey, cfg, tier?, history, issue, outPath, late }
+ * tier 缺省时读 cfg.modes.<game>.tier；两者皆无 → v1 等价旧规格（兼容）。
+ * 力度杠杆（MC-10）：effort ≠ follow-host 用杠杆表 tail/字数档/自检段；follow-host 用 cfg.historyTail。
  */
-export function buildPredictPrompt({ gameKey, cfg, history, issue, outPath, late }) {
+export function buildPredictPrompt({ gameKey, cfg, tier, history, issue, outPath, late }) {
   const g = GAMES[gameKey]
-  const s = stakesOf(gameKey)
+  const t = tierById(tier ?? cfg?.modes?.[gameKey]?.tier)
+  const spec = t ? specTextTier(t) : specText(gameKey)
   const persona = String(cfg?.persona ?? '').trim() || DEFAULT_PERSONA
-  const pack = dataPack(gameKey, history, { tailCount: Number(cfg?.historyTail ?? 10) })
+  const lever = leversFor(cfg)
+  const pack = dataPack(gameKey, history, { tailCount: lever.tail })
   const today = new Date()
   const dateStr = today.toLocaleDateString('sv-SE')
   const week = WEEKDAY[today.getDay()]
   const drawDay = `${today.getFullYear()} 年 ${today.getMonth() + 1} 月 ${today.getDate()} 日（${week}）`
 
-  return [
+  const lines = [
     `［人设］${persona}`,
     '',
     `【任务】今天是 ${drawDay}，${g.name}今晚开奖（${g.drawTimeText}）。第 ${issue} 期。${late ? '⚠️ 比平时晚了一拍（系统原因），分析可以短一点，先把号交出来。' : ''}`,
-    `你今天的玩法：${specText(gameKey)}。`,
+    `你今天的玩法：${spec}。`,
     '',
-    '【今天的研究材料】（都是官方开奖数据，最新在前）',
+    `【今天的研究材料】（都是官方开奖数据，最新在前；近 ${lever.tail} 期流水）`,
     pack,
     '',
     '【怎么做】',
     '1) 把材料读一遍，形成你今天的看法（冷号回补？热号续走？和值区间？随你，讲得出故事就行）。',
     '2) 按玩法规格选出你的号码。',
-    '3) 写给主人的推送正文 message，要求：',
-    '   - 300–600 字；先聊两三句你对今天走势的「研究心得」，再亮号码，再讲这注的思路，最后一句祝福收尾；',
-    `   - 号码写法：${gameKey === 'ssq' ? '红球 8 个 + 蓝球 1 个（比如「红 03 07 12 18 25 29 31 33 + 蓝 09」）' : gameKey === 'dlt' ? '前区 7 个 + 后区 2 个' : '百位-十位-个位（比如「6-4-7」）'}；`,
-    '   - 用你的口气，元气一点；可以自嘲、可以嘴硬、可以提鲸鱼，但别吹「稳了」（不真实，也不诚实）。',
+    `3) 写给主人的推送正文 message，要求：`,
+    `   - ${lever.min}–${lever.max} 字；先聊两三句你对今天走势的「研究心得」，再亮号码，再讲这注的思路，最后一句祝福收尾；`,
+    `   - 号码写法：${t ? picksHint(t, gameKey) : gameKey === 'ssq' ? '红球 8 个 + 蓝球 1 个（比如「红 03 07 12 18 25 29 31 33 + 蓝 09」）' : gameKey === 'dlt' ? '前区 7 个 + 后区 2 个' : '百位-十位-个位（比如「6-4-7」）'}；`,
+    '   - 用你的口气，元气一点；可以自嘲、可以嘴硬、可以提鲸鱼，但别吹「稳了」（不真实，也不诚实）；',
+    '   - 基调铁律：开奖是独立随机事件，任何表述都不得宣称提高/增加中奖概率。',
     '',
     '【交卷方式 —— 最重要的部分】',
     '把结果用 shell 写进这个文件（存在即可，内容必须是合法 JSON，字段一个不能少）：',
     `  ${outPath}`,
     'JSON 结构（严格照抄字段名，顶层带 schemaVersion）：',
-    gameKey === 'ssq'
-      ? '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"red":[8个整数],"blue":1个整数},"message":"给主人的完整正文"}'
-      : gameKey === 'dlt'
-        ? '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"front":[7个整数],"back":[2个整数]},"message":"给主人的完整正文"}'
-        : '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"digits":[3个整数]},"message":"给主人的完整正文"}',
+    t
+      ? contractLine(t, gameKey, issue)
+      : gameKey === 'ssq'
+        ? '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"red":[8个整数],"blue":1个整数},"message":"给主人的完整正文","summary":"≤100字的一句话摘要（不得宣称任何中奖概率提升）"}'
+        : gameKey === 'dlt'
+          ? '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"front":[7个整数],"back":[2个整数]},"message":"给主人的完整正文","summary":"≤100字的一句话摘要（不得宣称任何中奖概率提升）"}'
+          : '  {"schemaVersion":1,"issue":"' + issue + '","picks":{"digits":[3个整数]},"message":"给主人的完整正文","summary":"≤100字的一句话摘要（不得宣称任何中奖概率提升）"}',
     '写文件示例（heredoc 原样写入）：',
     `  cat > '${outPath}' <<'JSON'`,
     '  { …你的 JSON… }',
     '  JSON',
     '硬性规则：',
-    `  · 号码范围与个数必须完全合规（${specText(gameKey)}），系统会做硬校验，不合规会打回重写 ✓`,
+    `  · 号码范围与个数必须完全合规（${spec}），系统会做硬校验，不合规会打回重写 ✓`,
     '  · message 里【不要】写标题行和期号抬头（系统会统一加），不要用 Markdown 语法，纯文本换行即可',
+    '  · summary 是结构化字段（不是正文的一部分）：一句话、不超过 100 字、可以省略但别写成小作文',
     '  · 写完文件就收工：不要发任何消息、不要调用任何对外工具、不要动这个文件之外的东西',
     '  · 就算你对数据没感觉，也必须交一注合法号（可以说「今天凭感觉」）',
-  ].join('\n')
+  ]
+  if (lever.selfCheck) {
+    lines.push(
+      '',
+      '【自检清单（turbo 档要求，交卷前逐条过一遍）】',
+      '  1) 号码个数与范围逐位核对（对照玩法规格）；',
+      '  2) summary 不超过 100 字且无概率宣称；',
+      '  3) 正文没有「稳了/必中/概率提升」类表述。',
+    )
+  }
+  return lines.join('\n')
 }
 
 /** AI 摆烂时的兜底正文（模板，不带 AI 腔，照样元气） */

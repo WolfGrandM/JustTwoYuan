@@ -50,6 +50,27 @@ function parseSportteryPrizes(list) {
   return out
 }
 
+// 条目映射（fetchHistory / fetchHistoryPage 共用；URL 与请求头逐字不变——BC-104）
+const mapCwlItem = (it) => ({
+  issue: String(it.code ?? ''),
+  date: String(it.date ?? '').slice(0, 10),
+  red: String(it.red ?? '').split(',').map(Number).filter((x) => x >= 1 && x <= 33),
+  blue: Number(it.blue),
+  prizeGrades: Object.fromEntries((it.prizegrades ?? [])
+    .map((p) => [Number(p.type), Number(p.typemoney ?? 0)])
+    .filter(([_, m]) => m > 0)),
+})
+const mapSportteryItem = (gameKey) => (it) => {
+  const nums = String(it.lotteryDrawResult ?? '').trim().split(/\s+/).map(Number)
+  return {
+    issue: String(it.lotteryDrawNum ?? ''),
+    date: String(it.lotteryDrawTime ?? '').slice(0, 10),
+    ...(gameKey === 'dlt'
+      ? { front: nums.slice(0, 5), back: nums.slice(5, 7) }
+      : { digits: nums.slice(0, 3) }),
+  }
+}
+
 /**
  * 抓历史。返回按时间倒序（最新在前）的数组：
  *   ssq { issue, date, red:[6], blue, prizeGrades:{1:…} }
@@ -60,31 +81,41 @@ export async function fetchHistory(gameKey, count = 30) {
   if (gameKey === 'ssq') {
     const j = await jget(`https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueCount=${count}`, CWL_HEADERS)
     const items = Array.isArray(j?.result) ? j.result : []
-    return items.map((it) => ({
-      issue: String(it.code ?? ''),
-      date: String(it.date ?? '').slice(0, 10),
-      red: String(it.red ?? '').split(',').map(Number).filter((x) => x >= 1 && x <= 33),
-      blue: Number(it.blue),
-      prizeGrades: Object.fromEntries((it.prizegrades ?? [])
-        .map((p) => [Number(p.type), Number(p.typemoney ?? 0)])
-        .filter(([_, m]) => m > 0)),
-    }))
+    return items.map(mapCwlItem)
   }
   if (gameKey === 'dlt' || gameKey === 'p3') {
     const gameNo = gameKey === 'dlt' ? 85 : 350133
     const url = `https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=${gameNo}&provinceId=0&pageSize=${count}&isVerify=1&pageNo=1`
     const j = await jget(url, SPORTTERY_HEADERS)
     const items = Array.isArray(j?.value?.list) ? j.value.list : []
-    return items.map((it) => {
-      const nums = String(it.lotteryDrawResult ?? '').trim().split(/\s+/).map(Number)
-      return {
-        issue: String(it.lotteryDrawNum ?? ''),
-        date: String(it.lotteryDrawTime ?? '').slice(0, 10),
-        ...(gameKey === 'dlt'
-          ? { front: nums.slice(0, 5), back: nums.slice(5, 7) }
-          : { digits: nums.slice(0, 3) }),
-      }
-    })
+    return items.map(mapSportteryItem(gameKey))
+  }
+  throw new Error(`未知彩种 ${gameKey}`)
+}
+
+/**
+ * 深分页取一页历史（第二波 backfill 专用，docs/19 §2.1）。返回按时间倒序（最新在前）的数组，
+ * 形状与 fetchHistory 同。空页返回 []（backfill done 判据的数据源）。
+ *   ssq：  { window: { issueStart, issueEnd } }  → findDrawNotice?name=ssq&issueStart=…&issueEnd=…
+ *          （阶段A 冒烟实测：期号区间精确生效；issueEnd 单独传被忽略——必须成对传）
+ *   dlt/p3：{ pageNo }                            → getHistoryPageListV1.qry?…&pageSize=100&pageNo=…
+ *          （阶段A 冒烟实测：pageSize 上限 100；pageNo 连续翻页不重叠）
+ */
+export async function fetchHistoryPage(gameKey, page) {
+  if (gameKey === 'ssq') {
+    const w = page?.window
+    if (!w || w.issueStart == null || w.issueEnd == null) throw new Error('ssq 深分页必须成对携带 window.issueStart/issueEnd')
+    const j = await jget(`https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueStart=${w.issueStart}&issueEnd=${w.issueEnd}`, CWL_HEADERS)
+    const items = Array.isArray(j?.result) ? j.result : []
+    return items.map(mapCwlItem)
+  }
+  if (gameKey === 'dlt' || gameKey === 'p3') {
+    if (page?.pageNo == null) throw new Error('体彩深分页必须携带 pageNo')
+    const gameNo = gameKey === 'dlt' ? 85 : 350133
+    const url = `https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=${gameNo}&provinceId=0&pageSize=100&isVerify=1&pageNo=${page.pageNo}`
+    const j = await jget(url, SPORTTERY_HEADERS)
+    const items = Array.isArray(j?.value?.list) ? j.value.list : []
+    return items.map(mapSportteryItem(gameKey))
   }
   throw new Error(`未知彩种 ${gameKey}`)
 }
