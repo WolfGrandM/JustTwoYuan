@@ -127,7 +127,7 @@ window.__ModuleLoader__.load({
           title: "关闭桌宠（可在 设置→彩票 重新开启；事件仍见面板与渠道）",
           onClick: () => { try { fetch(`${API}/config`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ patch: { "pet.enabled": false } }) }) } catch {}; onClosePet?.() },
         }, "×"),
-        !guideSeen && !latest ? h("div", { className: "koi-pet-bubble" },
+        !guideSeen && events.length === 0 ? h("div", { className: "koi-pet-bubble" },
           "🐟 你好，我是锦鲤！点下面的鱼可以「现在来一注」（零配置，默认手动模式·不记账）。",
           h("div", { style: { textAlign: "right", marginTop: 4 } },
             h("button", { className: "koi-btn koi-btn2", style: { height: 22, fontSize: 11 }, onClick: () => { try { localStorage.setItem("koi-pet-guide", "1") } catch {}; setGuideSeen(true) } }, "知道了"))) : null,
