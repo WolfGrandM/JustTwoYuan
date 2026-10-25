@@ -27,7 +27,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { startKoiScheduler } from './scheduler.js'
 import { GAME_ORDER, GAMES, gamesForDate } from './draws.js'
-import { buildConfigTemplate, buildConfigDefaults, readConfig, validateConfig, maskConfig, SCHEMA_VERSION } from './config.js'
+import { buildConfigTemplate, buildConfigDefaults, readConfig, validateConfig, maskConfig } from './config.js'
 import { readJson, writeJsonAtomic } from './io.js'
 import { channelsStatus, resolveChannelCfg, maskChannelCfg } from './channels/index.js'
 
@@ -200,9 +200,10 @@ export default {
       json(res, 200, { ok: true, ...r })
     })
 
-    // ── 配置读写（FR-1020 三入口同源；GET 掩码 / POST 校验+原子写）────────────
     // T-11 / ADR-0006：GET 与 POST 均走 config.readConfig，与 scheduler / CLI 同源——
-    // v2 配置行为逐位不变；v1 遗留配置 GET 多出换算 modes、POST 就地完成 v1→v2 迁移。
+    // v2 配置行为逐位不变；v1 遗留配置 GET 多出换算 modes（读面与运行态一致），
+    // POST 写回换算结果但**不升 schemaVersion**：完整迁移（push 侧车/v1 等价档/gates）仍归
+    // `koi.mjs migrate-v2`，面板保存不是迁移通道（D5：升级版本号会让 migrate-v2 幂等短路）。
     route('exact', '/dsh-koi/api/config', async (req, res) => {
       if (req.method === 'GET') {
         const cfg = readConfig(CONFIG_FILE)
@@ -212,7 +213,6 @@ export default {
       if (!requireMethod(req, res, 'POST')) return
       const b = JSON.parse(await readBody(req) || '{}')
       const merged = applyPatch(readConfig(CONFIG_FILE), b.patch ?? {})
-      if (Number(merged.schemaVersion ?? 0) < SCHEMA_VERSION) merged.schemaVersion = SCHEMA_VERSION   // v1 就地迁移：随写回升级版本号
       const v = validateConfig(merged)
       if (!v.ok) { json(res, 400, { ok: false, errors: v.errors }); return }
       writeJsonAtomic(CONFIG_FILE, merged)

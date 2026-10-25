@@ -73,23 +73,24 @@ test('T-11 v1 遗留配置 GET：返回换算 modes（auto/off/auto），与调�
   assert.equal(readFile().modes, undefined, 'GET 不得写盘（迁移只发生在 POST）')
 })
 
-test('T-11 v1 遗留配置 POST：校验通过并就地迁移为 v2（schemaVersion 2、unknown 字段保留）', async () => {
+test('T-11 v1 遗留配置 POST：写回换算 modes 但**不升 schemaVersion**（migrate-v2 通道保持可用）', async () => {
   const r = await call('POST', JSON.stringify({ patch: { 'modes.p3.tier': 'p3-x5' } }))
   assert.equal(r.code, 200)
   assert.equal(r.json.ok, true)
   const f = readFile()
-  assert.equal(f.schemaVersion, SCHEMA_VERSION, '写回时版本号升级到当前 schema')
+  assert.equal(f.schemaVersion, 1, '面板保存不是迁移：版本号必须保持 1，否则 migrate-v2 幂等短路（D5）')
   assert.equal(f.modes.p3.tier, 'p3-x5', 'patch 生效')
-  assert.equal(f.modes.ssq.mode, 'auto', '换算结果随写回落盘')
+  assert.equal(f.modes.ssq.mode, 'auto', '换算结果随写回落盘（旧实现会写成默认 manual，静默丢 games 语义）')
   assert.equal(f.modes.dlt.mode, 'off')
+  assert.ok(f.games, 'games 段保留：migrate-v2 仍要靠它完成 v1 等价档与 gates 迁移')
   assert.deepEqual(f.push, V1.push, 'v1 遗留未知字段必须保留（保数据不丢）')
   assert.equal(f._说明, undefined, '运行时不引入首写模板的说明字段')
 })
 
-test('T-11 迁移后 GET：读的就是落盘 v2（不再走换算分支）', async () => {
+test('T-11 面板保存后 GET：读到 modes（不再走换算分支），schemaVersion 仍为 1', async () => {
   const r = await call()
   assert.equal(r.code, 200)
-  assert.equal(r.json.config.schemaVersion, SCHEMA_VERSION)
+  assert.equal(r.json.config.schemaVersion, 1)
   assert.equal(r.json.config.modes.p3.tier, 'p3-x5')
   assert.equal(r.json.config.modes.ssq.mode, 'auto')
 })
@@ -106,6 +107,7 @@ test('T-11 v2 配置零差异：GET 不写盘、POST 只改 patch 目标字段',
   const p = await call('POST', JSON.stringify({ patch: { 'budget.weeklyCap': 2_000_000 } }))
   assert.equal(p.code, 200)
   const f = readFile()
+  assert.equal(f.schemaVersion, SCHEMA_VERSION, 'v2 文件保持 v2')
   assert.equal(f.budget.weeklyCap, 2_000_000)
   assert.equal(f.modes.ssq.tier, defaultTierFor('ssq'), '未 patch 的 modes 不受影响')
   assert.equal(f.verbosity, 'chatty', '未 patch 的顶层字段不受影响')
@@ -118,4 +120,13 @@ test('T-11 非法 patch 仍 400 且不落盘（v1/v2 同口径）', async () => 
   assert.equal(r.code, 400)
   assert.ok(r.json.errors.some((e) => e.includes('weeklyCap')))
   assert.equal(fs.readFileSync(configPath, 'utf8'), before, '校验失败不得写盘')
+})
+
+test('T-11 坏配置兜底：文件内容为 null 时 GET 仍 200（默认配置），不得 500', async () => {
+  fs.writeFileSync(configPath, 'null')
+  const r = await call()
+  assert.equal(r.code, 200)
+  assert.equal(r.json.ok, true)
+  assert.equal(r.json.config.modes.ssq.mode, 'manual', 'null 文件按默认配置返回')
+  writeFile(JSON.parse(JSON.stringify(V1)))
 })

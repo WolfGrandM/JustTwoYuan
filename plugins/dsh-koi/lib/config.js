@@ -70,6 +70,7 @@ const CORNERS = ['br', 'bl', 'tr', 'tl']
 export function readConfig(configPath, defaults = buildConfigDefaults()) {
   let user = {}
   try { user = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch { /* 没配用默认 */ }
+  if (user == null || typeof user !== 'object' || Array.isArray(user)) user = {}   // 坏配置兜底：null/数组/标量 → 用默认
   const cfg = { ...structuredClone(defaults), ...structuredClone(user) }
   if (!user.modes && user.games) {
     cfg.modes = {}

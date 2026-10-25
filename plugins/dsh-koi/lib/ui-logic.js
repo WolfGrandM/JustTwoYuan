@@ -29,10 +29,6 @@ export function wizardComplete(stepBad = {}) {
 }
 
 // ── 六区校验联动（S-113：保存前全量校验按区分组）─────────────────────────────
-const SECTION_OF = {
-  channels: 'channels', modes: 'tiers', time: 'tiers', budget: 'budget',
-  roles: 'roles', effort: 'effort', verbosity: 'verbosity',
-}
 export const SECTIONS = [
   { key: 'channels', title: '渠道凭证' },
   { key: 'roles', title: '角色数量' },
@@ -44,6 +40,10 @@ export const SECTIONS = [
 
 /** validateConfig 的分区视图：{ [section]: [errors…] }（未出错区不出场） */
 export function sectionValidation(cfg) {
+  const SECTION_OF = {
+    channels: 'channels', modes: 'tiers', time: 'tiers', budget: 'budget',
+    roles: 'roles', effort: 'effort', verbosity: 'verbosity',
+  }
   const v = validateConfig(cfg)
   const out = {}
   for (const err of v.errors) {

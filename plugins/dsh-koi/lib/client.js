@@ -623,12 +623,6 @@ window.__ModuleLoader__.load({
         return WIZARD_STEPS.every((s) => stepBad[s.key] !== true)
       }
 
-      // ── 六区校验联动（S-113：保存前全量校验按区分组）─────────────────────────────
-      const SECTION_OF = {
-        channels: 'channels', modes: 'tiers', time: 'tiers', budget: 'budget',
-        roles: 'roles', effort: 'effort', verbosity: 'verbosity',
-      }
-
       // ── 降级判定（MC-16 ②/MB-28 第一级：React 渲染壳缺席 ≠ 通知丢失）────────────────
       function degradeDecision({ reactDomAvailable = false, petEnabled = true, panelChannelEnabled = true } = {}) {
         if (petEnabled && reactDomAvailable) return { level: 'normal', removePetContainer: false, note: '桌宠正常挂载' }
