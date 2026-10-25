@@ -1,7 +1,8 @@
 /**
- * 判奖金样本回归（C5 / FR-007 / AC-002）—— 内嵌历史真实开奖固定夹具，无网络。
+ * 判奖金样本回归（C5 / FR-007 / AC-002）—— 固定夹具零网络；夹具单一源 lib/golden-fixtures.js
+ * （v0.2-B1 T-04 自本文件与 tools/koi.mjs 的双份手工镜像下沉；tools/koi.mjs selftest 同源消费）。
  *
- * 夹具来源（2026-10-24 核实）：
+ * 夹具来源（2026-10-24 核实，全文见 lib/golden-fixtures.js 头注）：
  *   · SSQ 2026121（2026-10-22 开奖）红 02 07 20 24 26 30 + 蓝 02 —— 本仓库开发期自福彩官网实测数据
  *     （tests/stats.test.mjs 同源夹具，issue/日期映射与 tests/draws.test.mjs nextIssue 用例互证）；
  *   · DLT 26120（2026-10-21 开奖）前区 01 06 10 15 32 + 后区 03 04 —— 体彩开奖公告核实（新浪体育
@@ -11,15 +12,11 @@
  * 期望值按官方固定奖级表手算：SSQ 三~六等 3000/200/10/5、DLT 三~九等 10000/3000/300/200/100/15/5、
  * P3 直选 1040；一/二等奖浮动当晚按 0 计、给了 gradeMoney 才计入（docs/08 FR-5.3 语义）。
  * 覆盖：SSQ 一~六等、DLT 一~九等、P3 直选+未中 —— 三彩种全部奖级各至少一例。
- * CLI 侧镜像：tools/koi.mjs selftest（同一套夹具，两处改动须同步）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { judge, enumerateBets, gradeSummaryText } from '../lib/draws.js'
-
-const SSQ = { issue: '2026121', date: '2026-10-22', red: [2, 7, 20, 24, 26, 30], blue: 2, prizeGrades: { 3: 3000 } }
-const DLT = { issue: '26120', date: '2026-10-21', front: [1, 6, 10, 15, 32], back: [3, 4] }
-const P3 = { issue: '26282', date: '2026-10-23', digits: [6, 4, 7] }
+import { GOLDEN_SSQ as SSQ, GOLDEN_DLT as DLT, GOLDEN_P3 as P3 } from '../lib/golden-fixtures.js'
 
 test('夹具自检：真实开奖号本身合法（个数/范围），投注展开注数与规格一致', () => {
   assert.equal(SSQ.red.length, 6); assert.ok(SSQ.blue >= 1 && SSQ.blue <= 16)

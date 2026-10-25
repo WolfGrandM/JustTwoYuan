@@ -48,6 +48,7 @@ import { buildConfigTemplate, buildConfigDefaults, readConfig, validateConfig, c
 import { TIERS, tierById, judgeTier, v1EquivTier, specText } from '../lib/tiers.js'
 import { loadAdapters, channelsStatus, resolveChannelCfg, maskChannelCfg } from '../lib/channels/index.js'
 import { createEventBus } from '../lib/events.js'
+import { GOLDEN_SSQ, GOLDEN_DLT, GOLDEN_P3 } from '../lib/golden-fixtures.js'
 import { scanPackage } from './hygiene.mjs'
 
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
@@ -69,16 +70,15 @@ const cfg = () => readConfig(CONFIG_FILE, buildConfigDefaults())
 const cmd = process.argv[2] ?? 'help'
 
 /**
- * 判奖金样本夹具与断言（C5/FR-007；与 tests/judge-golden.test.mjs 保持同一套数据）。
- * 夹具为历史真实开奖：SSQ 2026121 / P3 26282 出自本仓库开发期实测数据，
- * DLT 26120（2026-10-21，前区 01 06 10 15 32 + 后区 03 04）经体彩开奖公告核实（2026-10-24）。
- * 假想投注按「覆盖目标奖级」构造，期望值按官方固定奖级表手算（SSQ 三~六等 3000/200/10/5；
+ * 判奖金样本断言（C5/FR-007）—— 夹具单一源 lib/golden-fixtures.js（v0.2-B1 T-04 下沉，
+ * 与 tests/judge-golden.test.mjs 同源消费；CLI 打包不依赖 tests/ 目录，W2B-14）。
+ * 期望值按官方固定奖级表手算（SSQ 三~六等 3000/200/10/5；
  * DLT 三~九等 10000/3000/300/200/100/15/5；P3 直选 1040；一/二等浮动按 0 计、给 gradeMoney 才计入）。
  */
 function goldenChecks() {
-  const SSQ = { issue: '2026121', date: '2026-10-22', red: [2, 7, 20, 24, 26, 30], blue: 2 }
-  const DLT = { issue: '26120', date: '2026-10-21', front: [1, 6, 10, 15, 32], back: [3, 4] }
-  const P3 = { issue: '26282', date: '2026-10-23', digits: [6, 4, 7] }
+  const SSQ = GOLDEN_SSQ
+  const DLT = GOLDEN_DLT
+  const P3 = GOLDEN_P3
   const cases = []
   const t = (name, cond) => cases.push({ name, ok: Boolean(cond) })
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)

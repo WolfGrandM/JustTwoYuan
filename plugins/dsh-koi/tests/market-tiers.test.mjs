@@ -1,6 +1,6 @@
 /**
  * 市场版 T2 —— 投注档位层（FR-1011/DC-106/BC-113）单测。
- * 金样本沿 tests/judge-golden.test.mjs 同一套真实开奖夹具（judge-golden 先例）；
+ * 金样本沿 lib/golden-fixtures.js 单一源真实开奖夹具（同源消费方：tests/judge-golden.test.mjs、tools/koi.mjs selftest）；
  * r9b2 拆单元聚合 19550 元 = docs/16 §8.2 A2.1 V3b 回归值（独立重推：红池 5 中 + 双蓝一中一不中）。
  */
 import test from 'node:test'
