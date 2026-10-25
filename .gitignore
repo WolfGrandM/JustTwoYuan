@@ -29,3 +29,7 @@ Desktop.ini
 .workbuddy/
 布局设计/.tmp_out/
 布局设计/.tmp_xlsx/
+
+# 交接包产物（防误提交）
+Koi交接包/
+koi-交接包-*.zip
