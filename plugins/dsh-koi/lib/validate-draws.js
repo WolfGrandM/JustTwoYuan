@@ -7,7 +7,7 @@
  *   ③ 号码值域（红 1–33 / 蓝 1–16 / 前 1–35 / 后 1–12 / 位 0–9，且个数与彩种一致）
  *   ④ 连续性（同年相邻期号差 1；跨年重排放行；断档/单调性破坏拒用）
  * 不过关即拒用（BC-104：绝不静默学习假数据），拒用条目带原因返回（rejected 清单，DC-109）。
- * 全部纯函数；新鲜度探针沿用 scheduler.isStaleDraw（>7 天 ✗，FR-008）。
+ * 全部纯函数；新鲜度探针沿用 settle-core.isStaleDraw（>7 天 ✗，FR-008；v0.2 T-05 前位于 scheduler.js）。
  */
 import { GAMES } from './draws.js'
 import { todayStr } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）

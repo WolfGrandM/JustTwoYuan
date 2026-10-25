@@ -3,7 +3,8 @@
  * FR-005 统一重试/补发/心跳语义在此实现一次（docs/16 §2.2.1）。
  *
  * 复用纪律（D-001/IF-R01）：retryIntervalMs / deadlineForKind / isPastDeadline / enqueueRepush
- * 直接 import scheduler.js 既有纯函数（零拷贝）；retryIntervalMs 以形参 shim
+ * 直接 import lib/settle-core.js 既有纯函数（零拷贝；v0.2 T-05 前自 scheduler.js import，
+ * 现随纯函数层搬迁改道——循环①消除）；retryIntervalMs 以形参 shim
  * {push:{retryMinutes:cfg.time?.retryMinutes}} 适配 v2 的 time.retryMinutes（等价性实测：
  * 7→420000ms、缺省→300000ms）。kind 扩展映射（advice/heartbeat → 12:00）在本层包装，不改原函数。
  *
@@ -14,11 +15,11 @@ import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 import { renderEvent } from './render.js'
 import { loadAdapters, resolveChannelCfg, secretsOf, maskString } from './channels/index.js'
-import { retryIntervalMs, deadlineForKind, isPastDeadline, enqueueRepush } from './scheduler.js'
+import { retryIntervalMs, deadlineForKind, isPastDeadline, enqueueRepush, REPUSH_QUEUE_MAX } from './settle-core.js'
 
 export const EVENT_KINDS = ['predict', 'quickpick', 'result', 'apology', 'alert', 'advice', 'heartbeat', 'test']
 const SEND_TIMEOUT_MS = 15_000
-const REPUSH_MAX = 20   // enqueueRepush 默认同值（FR-005 上限 20）
+// T-05：本行原 REPUSH_MAX = 20 手动镜像已删除——补发上限归一 settle-core.REPUSH_QUEUE_MAX（enqueueRepush 默认同参，FR-005 上限 20）
 
 /** 分类终止线的 kind 扩展映射（§2.2.1-2：advice/heartbeat → 次日 12:00；MD-08 包装不改原函数） */
 export function kindDeadline(kind, time = {}) {
@@ -165,7 +166,7 @@ export function createEventBus({
     const { queue, merged, dropped } = enqueueRepush(shadow, {
       kind: ev.kind, game: ev.game, issue: ev.issue ?? null, text: ev.body,
       deadline: ev.deadline, failedAt: ev.at, lastErr: ev.lastErr ?? '', attempts: ev.attempts ?? 1,
-    }, REPUSH_MAX)
+    }, REPUSH_QUEUE_MAX)
     const key = (x) => `${x.kind}|${x.game}|${x.issue ?? ''}`
     const byKey = new Map(queue.map((x) => [key(x), x]))
     for (const e of entries) {
@@ -187,7 +188,7 @@ export function createEventBus({
       ev.status = 'queued'
     }
     if (dropped.length) {
-      log(`[koi] 补发队列已满（${REPUSH_MAX}），最早 ${dropped.length} 条将放弃：${dropped.map((d) => `${d.kind}/${d.game}/${d.issue ?? '-'}`).join('、')}`)
+      log(`[koi] 补发队列已满（${REPUSH_QUEUE_MAX}），最早 ${dropped.length} 条将放弃：${dropped.map((d) => `${d.kind}/${d.game}/${d.issue ?? '-'}`).join('、')}`)
       // B-31 溢出告警（尽最大努力，不入队防自激；由 pump 落盘后 emit）
       alerts.push({ game: ev.game, dropped: dropped.map((d) => `${d.kind}/${d.game}`).join('、'), n: dropped.length })
     }
@@ -225,7 +226,7 @@ export function createEventBus({
     store.entries = entries
     saveStore(store)
     for (const a of alerts) {
-      await emit({ kind: 'alert', level: 'warn', game: a.game, noRetry: true, message: `补发队列已满（上限 ${REPUSH_MAX}），最早 ${a.n} 条将放弃（${a.dropped}）。通道恢复后请在面板确认。` })
+      await emit({ kind: 'alert', level: 'warn', game: a.game, noRetry: true, message: `补发队列已满（上限 ${REPUSH_QUEUE_MAX}），最早 ${a.n} 条将放弃（${a.dropped}）。通道恢复后请在面板确认。` })
     }
     return { pumped: true }
   }

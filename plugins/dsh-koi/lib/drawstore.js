@@ -13,7 +13,7 @@
 import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 import { validateDraws } from './validate-draws.js'
-import { isStaleDraw } from './scheduler.js'
+import { isStaleDraw } from './settle-core.js'   // T-05：原自 scheduler.js import（循环②消除，函数体零改动）
 import { todayStr as todayOf } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
 const defaultFetch = {
