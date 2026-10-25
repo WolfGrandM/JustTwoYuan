@@ -21,6 +21,9 @@ export const randSuffix = () => Math.random().toString(36).slice(2, 8)
  * @returns {Promise<any|null>} 解析成功返回对象；超时或被取消返回 null
  */
 export async function waitJsonFile(p, { timeoutMs, pollMs = 3_000, now = Date.now, stopCheck = () => false } = {}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new TypeError('waitJsonFile: timeoutMs 必填且必须为正数（v0.2B2-D2：不设隐藏默认）')
+  }
   const t0 = now()
   while (now() - t0 < timeoutMs) {
     if (stopCheck()) return null
