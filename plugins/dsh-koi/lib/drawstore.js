@@ -14,6 +14,7 @@ import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 import { validateDraws } from './validate-draws.js'
 import { isStaleDraw } from './scheduler.js'
+import { todayStr as todayOf } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
 const defaultFetch = {
   history: null,   // 惰性绑定，避免与 fetch-draws.mjs 形成加载期循环
@@ -26,7 +27,7 @@ const defaultFetch = {
 export function createDrawStore({ dataDir, fetch = defaultFetch, now = () => new Date(), staleMaxDays = 7 } = {}) {
   const dir = path.join(dataDir ?? '.', 'draws')
   const fileOf = (game) => path.join(dir, `${game}.json`)
-  const todayStr = () => now().toLocaleDateString('sv-SE')
+  const todayStr = () => todayOf(now())   // T-07：实现体引用单点，保留 now 注入
 
   const readStore = (game) => readJson(fileOf(game), { schemaVersion: 1, entries: [] })
   const writeStore = (game, store) => writeJsonAtomic(fileOf(game), store)

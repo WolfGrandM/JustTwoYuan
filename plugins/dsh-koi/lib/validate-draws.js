@@ -10,6 +10,7 @@
  * 全部纯函数；新鲜度探针沿用 scheduler.isStaleDraw（>7 天 ✗，FR-008）。
  */
 import { GAMES } from './draws.js'
+import { todayStr } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
 const ISSUE_RE = { ssq: /^\d{7}$/, dlt: /^\d{5}$/, p3: /^\d{5}$/ }
 
@@ -50,7 +51,7 @@ function checkEntry(gameKey, e, today) {
  * 连续性：同年相邻差 1；跨年（年份前缀变化）重排放行；断档或倒挂 → 涉事两条均拒（MD 登记）。
  */
 export function validateDraws(gameKey, entries, { today } = {}) {
-  const t = today ?? new Date().toLocaleDateString('sv-SE')
+  const t = today ?? todayStr()   // T-07：参数优先、缺省走单点（默认真实时钟）
   const list = Array.isArray(entries) ? entries.filter(Boolean) : []
   const rejected = []
   const seen = new Set()

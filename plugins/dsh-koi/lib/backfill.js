@@ -18,6 +18,7 @@ import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 import { validateDraws, auditContinuity, crossCheckLatest } from './validate-draws.js'
 import { fetchHistoryPage, fetchLatestDraw } from './fetch-draws.mjs'
+import { hhmm as hhmmOf, todayStr } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
 const BACKOFF_MS = [2_000, 8_000, 30_000]   // 单批失败重试间隔（指数 + 抖动上限，docs/19 §2.3-5）
 const PAUSE_POLL_MS = 30_000                // 错峰暂停中的复检间隔
@@ -26,7 +27,7 @@ const MIN_SSQ_WINDOW = 10                   // 福彩窗口减半下限
 const DEFAULT_BATCH_GAP_MS = 2_000
 
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const hhmmOf = (d) => d.toLocaleTimeString('sv-SE', { hour12: false }).slice(0, 5)
+// T-07：hhmmOf 已下沉 lib/timeutil.js（import 别名保持本文件既有名字）
 /** 错峰窗口 [17:00, 22:30)（BC-012；与第一波语义同源） */
 export const inOffpeakWindow = (now) => {
   const t = hhmmOf(now)
@@ -128,7 +129,7 @@ export function createBackfill({
     const batchGapMs = Number(bf.batchGapMs) > 0 ? Number(bf.batchGapMs) : DEFAULT_BATCH_GAP_MS
     const retryMax = Number.isInteger(Number(bf.retryMax)) && Number(bf.retryMax) >= 0 ? Number(bf.retryMax) : 3
     const targetIssues = Number(bf.targetIssues) > 0 ? Number(bf.targetIssues) : null
-    const today = now().toLocaleDateString('sv-SE')
+    const today = todayStr(now())   // T-07：内联 toLocaleDateString 改引用单点（v0.2B2-D1）
 
     const cp = readCp()
     cp.perGame = cp.perGame ?? {}

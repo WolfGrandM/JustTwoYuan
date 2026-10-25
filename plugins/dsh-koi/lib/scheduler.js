@@ -45,6 +45,7 @@ import { createUsageTracker, demotionFor, leversFor, leverActive, costEstimate, 
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
 import { loadAdapters, resolveChannelCfg, maskValue } from './channels/index.js'
+import { hhmm as hhmmOf, todayStr as todayOf } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
 const TICK_MS = 30_000
 const ATTEMPT_GAP_MS = 2 * 60_000        // 两次出号尝试至少隔 2 分钟
@@ -144,7 +145,7 @@ export function isPastDeadline(now, deadlineHHMM, failedAtISO) {
   const f = new Date(failedAtISO)
   if (Number.isNaN(f.getTime())) return false
   const sameDay = now.toLocaleDateString('sv-SE') === f.toLocaleDateString('sv-SE')
-  return sameDay ? hhmm(now) > String(deadlineHHMM) : true
+  return sameDay ? hhmmOf(now) > String(deadlineHHMM) : true
 }
 
 /**
@@ -199,8 +200,8 @@ export function classifyHostError(err, patterns = DEFAULT_NO_MODEL_PATTERNS) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const hhmm = (d = new Date()) => d.toLocaleTimeString('sv-SE', { hour12: false }).slice(0, 5)
-const todayStr = (d = new Date()) => d.toLocaleDateString('sv-SE')
+// T-07：模块级 hhmm/todayStr 双定义已下沉 lib/timeutil.js（isPastDeadline 直接用 hhmmOf）；
+// 闭包版保留 nowFn 默认（测试注入时钟），实现体引用单点
 
 export function startKoiScheduler(ctx, opts) {
   const {
@@ -214,8 +215,8 @@ export function startKoiScheduler(ctx, opts) {
     fetch: fetchInj,                        // 测试注入官方抓取 { fetchHistory, fetchLatestDraw }（默认真实源）
   } = opts
 
-  const hhmm = (d = nowFn()) => d.toLocaleTimeString('sv-SE', { hour12: false }).slice(0, 5)
-  const todayStr = (d = nowFn()) => d.toLocaleDateString('sv-SE')
+  const hhmm = (d = nowFn()) => hhmmOf(d)
+  const todayStr = (d = nowFn()) => todayOf(d)
   const fetchers = {
     fetchHistory: fetchInj?.fetchHistory ?? ((g, c) => fetchHistory(g, c)),
     fetchLatestDraw: fetchInj?.fetchLatestDraw ?? ((g) => fetchLatestDraw(g)),
