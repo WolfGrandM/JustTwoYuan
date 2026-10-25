@@ -7,6 +7,8 @@
  *   ③ 全部函数同夹具对照（每函数一组确定夹具，两侧调用结果逐夹具 deepStrictEqual）。
  * 豁免清单 BROWSER_UNUSED：SECTIONS / sectionValidation —— 浏览器端零消费（client.js 全文零引用；
  * 六区校验在浏览器走 POST /api/config 服务端 validateConfig），非同源成员漂移（决策 v0.2B1-D5）。
+ * T-12 起内联块由 tools/gen-ui-logic.mjs 机械生成（同源守卫见 tests/gen-ui-logic.test.mjs），
+ * 本门继续作为**行为**兜底：生成器出错但两侧恰好等价时放行，行为漂移时必失败。
  * 豁免自带守卫：一旦 client.js 源码出现对豁免成员的引用而内联副本仍缺员，本门立即失败。
  * 微桩加载形态沿 tests/market-ui.test.mjs loadClientStub（假 window 捕获 factory，本文件只需 exports）。
  */
