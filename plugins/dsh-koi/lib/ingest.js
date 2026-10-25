@@ -25,6 +25,7 @@ import { findRuleDup, nameKey } from './cards.js'
 import { estTokens } from './usage.js'
 import { factorizeCard } from './factorize.js'
 import { inOffpeakWindow } from './backfill.js'
+import { randSuffix, waitJsonFile } from './fspoll.js'   // T-06：轮询微工具单点（无取消语义，stopCheck 走默认 false）
 
 const EXT_OK = ['.txt', '.md']
 const FORMAT_REJECT = '支持 .txt / .md（≤20MB）；PDF/EPUB 请先转为文本（暂不支持直接解析，已在待办）'
@@ -32,8 +33,6 @@ const SPLIT_WAIT_MS = 10 * 60_000
 const SPLIT_POLL_MS = 3_000
 const JOBS_KEEP_DONE = 50
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const randSuffix = () => Math.random().toString(36).slice(2, 8)
 const extOf = (name) => path.extname(String(name ?? '')).toLowerCase()
 
 /** 上传面 token 估算（§4.1 BC-107 补位：字节/12，中文 UTF-8 保守折算） */
@@ -164,14 +163,7 @@ export function createIngest({
     return { ok: true, cards: out }
   }
 
-  async function waitJsonFile(p, timeoutMs) {
-    const t0 = Date.now()
-    while (Date.now() - t0 < timeoutMs) {
-      try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* 还没写好 */ }
-      await sleep(SPLIT_POLL_MS)
-    }
-    return null
-  }
+  // T-06：waitJsonFile 已下沉 lib/fspoll.js（poll 由调用点传 SPLIT_POLL_MS，无取消语义）
 
   const rejectJob = (job, error) => saveJob({ ...job, status: 'rejected', error, updatedAt: now().toISOString() })
 
@@ -304,13 +296,13 @@ export function createIngest({
           return { ok: true, job: saveJob({ ...job, status: 'pending-llm', error: `拆卡环节暂不可用（${msg.slice(0, 160)}）`, updatedAt: now().toISOString() }) }
         }
         try { lock?.heartbeat?.() } catch {}
-        const raw1 = await waitJsonFile(outFile, waitMs)
+        const raw1 = await waitJsonFile(outFile, { timeoutMs: waitMs, pollMs: SPLIT_POLL_MS })
         let v = raw1 == null ? { ok: false, error: '交卷超时（未等到文件）', timeout: true } : validateCardsPayload(raw1)
         if (!v.ok) {
           log(`[koi] ingest ${job.id} 块 ${ci + 1}/${chunks.length} 第一次交卷不合格（${v.error}），打回重写一次`)
           await callAgent(`【打回重写】你刚写的拆卡交卷校验没过：${v.error}。请立刻重写 ${outFile}（还是那个 JSON 契约），写完就停。`)
           try { lock?.heartbeat?.() } catch {}
-          const raw2 = await waitJsonFile(outFile, Math.min(waitMs, 60_000))
+          const raw2 = await waitJsonFile(outFile, { timeoutMs: Math.min(waitMs, 60_000), pollMs: SPLIT_POLL_MS })
           v = raw2 == null ? { ok: false, error: '重写交卷超时', timeout: true } : validateCardsPayload(raw2)
         }
         if (!v.ok) {

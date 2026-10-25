@@ -14,8 +14,7 @@ import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 import { tiersForGame, judgeTier, randomTierPicks, tierStakes, tierById } from './tiers.js'
 import { hasProbabilityClaim } from './render.js'
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+import { waitJsonFile } from './fspoll.js'   // T-06：轮询微工具单点（无取消语义，poll 由本模块参数传入）
 
 export function createAdvisory({ dataDir, workDir, promptAgent, now = () => new Date(), log = () => {}, waitMs = 90_000, pollMs = 3_000 } = {}) {
   const ADV_DIR = path.join(dataDir ?? '.', 'advisory')
@@ -25,14 +24,7 @@ export function createAdvisory({ dataDir, workDir, promptAgent, now = () => new 
   const fileOf = (game, date) => path.join(ADV_DIR, `${game}-${date}.json`)
   const readAdvice = (game, date) => readJson(fileOf(game, date), null)
 
-  async function waitJsonFile(p, timeoutMs = waitFileMs) {
-    const t0 = Date.now()
-    while (Date.now() - t0 < timeoutMs) {
-      try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* 还没写好 */ }
-      await sleep(pollMs)
-    }
-    return null
-  }
+  // T-06：waitJsonFile 已下沉 lib/fspoll.js（timeout/poll 仍由本模块参数控制）
 
   /**
    * ① 预注册判据（§4.5）：判据 = 纯代码计算的结构性数据，先于建议产出落盘。
@@ -105,7 +97,7 @@ export function createAdvisory({ dataDir, workDir, promptAgent, now = () => new 
       '  · 写完文件就收工：不要发任何消息、不要动这个文件之外的东西。',
     ].filter(Boolean).join('\n')
     await promptAgent(prompt)
-    const raw = await waitJsonFile(outPath)
+    const raw = await waitJsonFile(outPath, { timeoutMs: waitFileMs, pollMs })
     try { fs.rmSync(outPath, { force: true }) } catch {}
     if (!raw || typeof raw !== 'object') return { ok: false, error: '建议交卷文件没等到（本轮跳过，不影响正式预测）' }
     const t = tierById(raw.recommendedTier)

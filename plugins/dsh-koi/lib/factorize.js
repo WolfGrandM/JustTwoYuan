@@ -12,6 +12,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { numsOf, hotSet, coldSet, keysOfEntry } from './factors.js'
+import { waitJsonFile } from './fspoll.js'   // T-06：轮询微工具单点（无取消语义，poll 由本模块参数传入）
 
 /** metric 白名单（与内置因子同空间；docs/19 §5.7） */
 export const METRICS = {
@@ -191,19 +192,11 @@ export function buildFactorizePrompt({ card, outFile }) {
 export async function factorizeCard({ card, promptAgent, filesDir, now = () => new Date(), waitMs = 10 * 60_000, pollMs = 3_000, log = () => {} }) {
   if (typeof promptAgent !== 'function') return { ok: false, reason: 'promptAgent 不可用（宿主会话未注入）' }
   const outFile = path.join(filesDir, `factorize-${card.id}.json`)
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const waitFile = async (timeoutMs) => {
-    const t0 = Date.now()
-    while (Date.now() - t0 < timeoutMs) {
-      try { return JSON.parse(fs.readFileSync(outFile, 'utf8')) } catch { /* 还没写好 */ }
-      await sleep(pollMs)
-    }
-    return null
-  }
+  // T-06：waitFile（含本地 sleep）已下沉 lib/fspoll.js——timeout/poll 仍由本函数参数控制
   try { fs.rmSync(outFile, { force: true }) } catch {}
   const run = async (extraText) => {
     await promptAgent(buildFactorizePrompt({ card, outFile }) + (extraText ? '\n\n' + extraText : ''))
-    return await waitFile(waitMs)
+    return await waitJsonFile(outFile, { timeoutMs: waitMs, pollMs })
   }
   let raw = await run('')
   let v = raw ? validateFactorSpec(raw, { card }) : { ok: false, errors: ['交卷文件没等到（超时或未写）'] }

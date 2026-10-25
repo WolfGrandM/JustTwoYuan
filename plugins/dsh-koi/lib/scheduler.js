@@ -46,6 +46,7 @@ import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkG
 import { dataPack } from './stats.js'
 import { loadAdapters, resolveChannelCfg, maskValue } from './channels/index.js'
 import { hhmm as hhmmOf, todayStr as todayOf } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
+import { waitJsonFile } from './fspoll.js'                             // T-06：轮询微工具单点（stopCheck 显式注入）
 
 const TICK_MS = 30_000
 const ATTEMPT_GAP_MS = 2 * 60_000        // 两次出号尝试至少隔 2 分钟
@@ -64,7 +65,8 @@ export { isHoliday, settleOutcome, buildMainPendingEntry, buildSupplementEntry, 
          carryJobsFromEntries, retryIntervalMs, deadlineForKind, isPastDeadline, enqueueRepush,
          isStaleDraw, DEFAULT_NO_MODEL_PATTERNS, classifyHostError, REPUSH_QUEUE_MAX } from './settle-core.js'
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// T-06：模块级 sleep 与 startKoiScheduler 内的 waitJsonFile 已下沉 lib/fspoll.js
+// （scheduler 的停机取消语义经 stopCheck: () => stopped 显式注入，行为逐字保持）
 // T-07：模块级 hhmm/todayStr 双定义已下沉 lib/timeutil.js（isPastDeadline 直接用 hhmmOf）；
 // 闭包版保留 nowFn 默认（测试注入时钟），实现体引用单点
 
@@ -220,7 +222,7 @@ export function startKoiScheduler(ctx, opts) {
       try { fs.rmSync(outPath, { force: true }) } catch {}
       await promptAgent(buildPredictPrompt({ gameKey, cfg: cfgEff, tier, history, issue, outPath, late }))
       // 3) 等结果文件 → 档位硬校验；不合法给一次重写机会；再不行随机兜底（FZ-2 平行函数）
-      let raw = await waitJsonFile(outPath)
+      let raw = await waitJsonFile(outPath, { timeoutMs: FILE_WAIT_MS, pollMs: FILE_POLL_MS, stopCheck: () => stopped })
       let v = raw ? validateTierPicks(t ?? tierOf(cfg, gameKey), raw.picks ?? raw) : { ok: false, error: '没有等到结果文件' }
       if (!v.ok) {
         log(`[koi] ${gameKey} 第一次产出不合格（${v.error}），给她一次重写机会`)
@@ -228,7 +230,7 @@ export function startKoiScheduler(ctx, opts) {
           '【打回重写】你刚写的文件系统校验没过：' + v.error,
           `请立刻重写 ${outPath}（还是那个 JSON 契约，号码必须合规），写完就停。`,
         ].join('\n'))
-        raw = await waitJsonFile(outPath, 60_000)
+        raw = await waitJsonFile(outPath, { timeoutMs: 60_000, pollMs: FILE_POLL_MS, stopCheck: () => stopped })
         v = raw ? validateTierPicks(t ?? tierOf(cfg, gameKey), raw.picks ?? raw) : { ok: false, error: '重写也没等到' }
       }
       let picks, message, via, summary = null
@@ -269,15 +271,7 @@ export function startKoiScheduler(ctx, opts) {
     writeJsonAtomic(PRED_FILE, ensureSchemaVersion(preds))   // C4：顶层 schemaVersion
   }
 
-  async function waitJsonFile(p, timeoutMs = FILE_WAIT_MS) {
-    const t0 = Date.now()
-    while (Date.now() - t0 < timeoutMs) {
-      if (stopped) return null
-      try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* 还没写好 */ }
-      await sleep(FILE_POLL_MS)
-    }
-    return null
-  }
+  // T-06：waitJsonFile 已下沉 lib/fspoll.js——调用点显式传 timeout/poll/stopCheck（取消语义不丢）
 
   // ── 战果文案（⑦：改读条目自带 spec/bets/cost——非默认档战果文案正确，MB-26）──────────
   function resultLine(gameKey, r) {
