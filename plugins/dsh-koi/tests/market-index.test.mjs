@@ -199,3 +199,19 @@ test('栅栏 fail-closed：requestRejection 返回 403 → 拒绝码透传；栅
   assert.ok(r2.json.error.includes('fail-closed'))
   conn.requestRejection = () => false
 })
+
+test('T-10 method 守卫：GET-only 收 POST → 405；POST-only 收 GET → 405；体严格 {ok:false}', async () => {
+  const getOnly = ['/dsh-koi/api/events', '/dsh-koi/api/backtest']
+  const postOnly = ['/dsh-koi/api/test-push', '/dsh-koi/api/channels/test', '/dsh-koi/api/mode',
+    '/dsh-koi/api/backbone/full', '/dsh-koi/api/backbone/stop']
+  for (const p of getOnly) {
+    const r = await call(p, { method: 'POST' }).promise
+    assert.equal(r.code, 405, `${p} 收到 POST 应 405`)
+    assert.deepEqual(r.json, { ok: false }, `${p} 的 405 响应体形状必须与抽取前一致`)
+  }
+  for (const p of postOnly) {
+    const r = await call(p, { method: 'GET' }).promise
+    assert.equal(r.code, 405, `${p} 收到 GET 应 405`)
+    assert.deepEqual(r.json, { ok: false }, `${p} 的 405 响应体形状必须与抽取前一致`)
+  }
+})

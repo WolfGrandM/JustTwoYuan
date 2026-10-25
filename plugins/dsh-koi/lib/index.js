@@ -54,7 +54,8 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj))
 }
 
-function readBody(req, limit = 16 * 1024) {
+/** 读请求体（T-10 单实现）：默认文本 16KB；二进制路由传 { limit, binary:true }，超限抛 body too large */
+function readBody(req, { limit = 16 * 1024, binary = false } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0
     const chunks = []
@@ -63,7 +64,10 @@ function readBody(req, limit = 16 * 1024) {
       if (size > limit) { reject(new Error('body too large')); req.destroy(); return }
       chunks.push(c)
     })
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('end', () => {
+      const buf = Buffer.concat(chunks)
+      resolve(binary ? buf : buf.toString('utf8'))
+    })
     req.on('error', reject)
   })
 }
@@ -125,6 +129,18 @@ export default {
       }))
     }
 
+    // ── 路由守卫（T-10 样板抽取；响应体与状态码与抽取前逐位一致）──────────────
+    function requireMethod(req, res, method) {
+      if (req.method === method) return true
+      json(res, 405, { ok: false })
+      return false
+    }
+    function requireSched(res) {
+      if (sched) return true
+      json(res, 503, { ok: false, error: '调度器未启动' })
+      return false
+    }
+
     // ── 渠道探测（30s TTL 缓存，MD-11；status 轮询开销与 v1 同量级）────────────
     let channelsProbe = { at: 0, data: [] }
     async function channelsNow() {
@@ -158,8 +174,8 @@ export default {
         if (!job) { json(res, 404, { ok: false, error: '没有这个任务' }); return }
         json(res, 200, { ok: true, job }); return
       }
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'POST')) return
+      if (!requireSched(res)) return
       const b = JSON.parse(await readBody(req) || '{}')
       const r = sched.quickpick(String(b.game ?? ''))
       json(res, r.ok ? 200 : 400, r)
@@ -167,7 +183,7 @@ export default {
 
     // ── 测试事件（形状不变 FZ-6；语义 = 经事件层发测试事件至启用渠道）──────────
     route('exact', '/dsh-koi/api/test-push', async (req, res) => {
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
+      if (!requireMethod(req, res, 'POST')) return
       try {
         const r = await sched.bus.testEvent()
         json(res, 200, r)
@@ -176,8 +192,8 @@ export default {
 
     // ── 事件列表（桌宠/面板共用；DC-102 窗口 + since 游标）────────────────────
     route('exact', '/dsh-koi/api/events', async (req, res) => {
-      if (req.method !== 'GET') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'GET')) return
+      if (!requireSched(res)) return
       const u = new URL(req.url, 'http://x')
       const limit = Math.min(Number(u.searchParams.get('limit') ?? 200) || 200, 200)
       const r = sched.bus.listEvents({ since: u.searchParams.get('since') ?? undefined, limit })
@@ -191,7 +207,7 @@ export default {
         json(res, 200, { ok: true, configPath: CONFIG_FILE, config: maskConfig(cfg) })
         return
       }
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
+      if (!requireMethod(req, res, 'POST')) return
       const b = JSON.parse(await readBody(req) || '{}')
       const current = { ...buildConfigDefaults(), ...(readJson(CONFIG_FILE, {}) ?? {}) }
       const merged = applyPatch(current, b.patch ?? {})
@@ -203,7 +219,7 @@ export default {
 
     // ── 单渠道测试（AC-103：逐渠道独立测试，掩码回显）─────────────────────────
     route('exact', '/dsh-koi/api/channels/test', async (req, res) => {
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
+      if (!requireMethod(req, res, 'POST')) return
       const b = JSON.parse(await readBody(req) || '{}')
       const cfg = readJson(CONFIG_FILE, {}) ?? {}
       const entry = (cfg.channels ?? [])[Number(b.index)]
@@ -222,8 +238,8 @@ export default {
 
     // ── 三态切换/门控（S-116：任一缺失即阻止并逐项指明）───────────────────────
     route('exact', '/dsh-koi/api/mode', async (req, res) => {
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'POST')) return
+      if (!requireSched(res)) return
       const b = JSON.parse(await readBody(req) || '{}')
       const r = await sched.setMode(b)
       json(res, r.ok ? 200 : 400, r)
@@ -233,7 +249,7 @@ export default {
     let pullingBackbone = false
     route('exact', '/dsh-koi/api/backbone', async (req, res) => {
       if (req.method === 'GET') {
-        if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+        if (!requireSched(res)) return
         const st = sched.status()
         json(res, 200, {
           ok: true, backbone: st.backbone,
@@ -242,8 +258,8 @@ export default {
         })
         return
       }
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'POST')) return
+      if (!requireSched(res)) return
       if (pullingBackbone) { json(res, 409, { ok: false, error: '正在拉取中' }); return }
       pullingBackbone = true
       const out = {}
@@ -262,8 +278,8 @@ export default {
 
     // ── 全量回拉（第二波 docs/19 §2.5：确认框触发；真实全量不自动执行——红线）──────────
     route('exact', '/dsh-koi/api/backbone/full', async (req, res) => {
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'POST')) return
+      if (!requireSched(res)) return
       let b = {}
       try { b = JSON.parse(await readBody(req) || '{}') } catch { b = {} }
       if (b.confirm !== true) { json(res, 400, { ok: false, error: '缺少 confirm:true（全量回拉需经确认框显式确认）' }); return }
@@ -277,29 +293,16 @@ export default {
     })
 
     route('exact', '/dsh-koi/api/backbone/stop', async (req, res) => {
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'POST')) return
+      if (!requireSched(res)) return
       json(res, 200, sched.backfill.stop())
     })
 
     // ── 学习半环（第二波 docs/19 §4.1/§8）：raw body 上传（非 multipart，W2A-11）+ jobs/卡片状态 ──
-    // 该路由独立二进制读体：Buffer 累积 + 20MB 上限（超限 413）；.txt/.md 白名单（415，S-118）。
-    async function readBodyBinary(req, limit = 20 * 1024 * 1024) {
-      return new Promise((resolve, reject) => {
-        let size = 0
-        const chunks = []
-        req.on('data', (c) => {
-          size += c.length
-          if (size > limit) { reject(new Error('body too large')); req.destroy(); return }
-          chunks.push(c)
-        })
-        req.on('end', () => resolve(Buffer.concat(chunks)))
-        req.on('error', reject)
-      })
-    }
+    // 二进制读体走 readBody 的 { limit, binary:true }（T-10 单实现）：Buffer 累积 + 20MB 上限（超限 413）。
     route('exact', '/dsh-koi/api/ingest', async (req, res) => {
       if (req.method === 'GET') {
-        if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+        if (!requireSched(res)) return
         const st = sched.ingest.list()
         json(res, 200, {
           ok: true,
@@ -309,12 +312,12 @@ export default {
         })
         return
       }
-      if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'POST')) return
+      if (!requireSched(res)) return
       const u = new URL(req.url, 'http://x')
       const name = u.searchParams.get('name') ?? 'upload.txt'
       let buf
-      try { buf = await readBodyBinary(req) } catch {
+      try { buf = await readBody(req, { limit: 20 * 1024 * 1024, binary: true }) } catch {
         json(res, 413, { ok: false, error: '文件超过 20MB 上限（该路由二进制上限 20MB）' })
         return
       }
@@ -325,8 +328,8 @@ export default {
 
     // ── 因子结论（第二波 §8「因子结论」区数据源：内置档案 + 卡片回写结论；口径行前端恒拼）──
     route('exact', '/dsh-koi/api/backtest', async (req, res) => {
-      if (req.method !== 'GET') { json(res, 405, { ok: false }); return }
-      if (!sched) { json(res, 503, { ok: false, error: '调度器未启动' }); return }
+      if (!requireMethod(req, res, 'GET')) return
+      if (!requireSched(res)) return
       json(res, 200, {
         ok: true,
         verdicts: Object.fromEntries(GAME_ORDER.map((g) => [g, sched.backtest.verdicts(g)])),
