@@ -677,6 +677,66 @@ export function startKoiScheduler(ctx, opts) {
     return { ok: true }
   }
 
+  // ── status 组装（T-09 / v0.2B2-D3）：拆成「单彩种卡片」与「响应载荷」两段，status() 只做编排 ──
+  function gameCard(k, cfg, drawTodaySet) {
+    const st = state?.games?.[k]
+    const mode = modeOfGame(cfg, k)
+    const enabled = mode !== 'off' && drawTodaySet.has(k)   // FZ-6 降级语义（MB-25）：三态取值
+    const s = tierStakes(tierOf(cfg, k)) ?? stakesOf(k)
+    return {
+      enabledToday: enabled,
+      mode,
+      phase: enabled || mode !== 'off' ? (st?.phase ?? 'idle') : 'off',
+      issue: st?.issue ?? null,
+      picksLine: st?.picksLine ?? null,
+      via: st?.via ?? null,
+      pushedAt: st?.pushedAt ?? null,
+      pushErr: st?.pushErr ?? null,
+      settled: st?.settled ?? false,
+      lastError: st?.lastError ?? null,
+      spec: s.spec,
+      bets: s.bets,
+      cost: s.cost,
+    }
+  }
+
+  function statusPayload({ cfg, today, lever, out, enabledChannels, eventsCounts, packChars }) {
+    // FZ-6 降级语义（MB-25）：push/pushTargetMasked 字段保留、值域与 v1 连续
+    const qqChannel = enabledChannels.find((c) => c.type === 'qq')
+    let pushTargetMasked = ''
+    if (qqChannel) {
+      const sidecar = resolveChannelCfg(qqChannel, USER_CHANNELS_DIR)
+      pushTargetMasked = String(sidecar.target ?? '').replace(/^(\d{3})\d+(\d{2})$/, '$1****$2') || maskValue(sidecar.target ?? '')
+    }
+    const totals = ledgerTotals(readLedger())   // T-09：单次读取，ledger 与 ledgerText 同源
+    return {
+      ok: true, today, time: hhmm(),
+      schedulerOk: true,
+      games: out,
+      modes: Object.fromEntries(GAME_ORDER.map((k) => [k, cfg.modes?.[k] ?? { mode: modeOfGame(cfg, k) }])),
+      carry: (state?.carry ?? []).length,
+      holiday: isHoliday(today, cfg.holidays),          // C2/FR-002：今天是否休市
+      repushQueue: (eventsCounts.queued ?? 0) + (eventsCounts.retrying ?? 0),   // FZ-6 字段：事件层队列口径
+      events: { ...eventsCounts, heartbeatRed: state?.heartbeatRed ?? false },
+      heartbeatCheckedAt: state?.heartbeatCheckedAt ?? null,   // 关机缺席如实展示（§2.2.1-6④）
+      mind: mindStatus(cfg),                            // FR-023：认知层总开关与握手状态（只读）
+      ledger: totals,
+      ledgerText: ledgerTotalsText(totals),
+      push: { ok: enabledChannels.length > 0, detail: '推送已迁移至渠道层，见 channels' },
+      pushTargetMasked,
+      tiers: Object.fromEntries(GAME_ORDER.map((k) => {
+        const s = tierStakes(tierOf(cfg, k))
+        return [k, s ? { id: tierOf(cfg, k), ...s } : null]
+      })),
+      tierTable: Object.fromEntries(GAME_ORDER.map((k) => [k, tiersForGame(k).map((t) => ({ id: t.id, label: t.label, bets: t.bets, cost: t.cost }))])),
+      verbosity: cfg.verbosity ?? 'concise',
+      effort: { tier: lever.tier, leverActive: leverActive(cfg) },
+      backbone: Object.fromEntries(GAME_ORDER.map((k) => [k, store.status(k)])),
+      costEstimate: costEstimate(cfg, { packChars }),
+      lastError: state?.lastError ?? null,
+    }
+  }
+
   const timer = setInterval(() => { tick().catch(() => {}) }, TICK_MS)
   const boot = setTimeout(() => { tick().catch(() => {}) }, 10_000)
   log(`[koi] 锦鲤生物钟已启动（每 ${TICK_MS / 1000}s tick · 会话 ${sessionId} · 出号 per-game predictAt · 对账 ${DEFAULTS.time.settleAt} 起 · 心跳 ${DEFAULTS.time.heartbeatAt}）`)
@@ -698,41 +758,13 @@ export function startKoiScheduler(ctx, opts) {
     status() {
       const cfg = cfgNow()
       const today = todayStr()
-      const g = (state?.games) ?? {}
       const lever = leversFor(cfg)
       const out = {}
       const drawTodaySet = new Set(gamesForDate(today))
-      for (const k of GAME_ORDER) {
-        const st = g[k]
-        const mode = modeOfGame(cfg, k)
-        const enabled = mode !== 'off' && drawTodaySet.has(k)   // FZ-6 降级语义（MB-25）：三态取值
-        const s = tierStakes(tierOf(cfg, k)) ?? stakesOf(k)
-        out[k] = {
-          enabledToday: enabled,
-          mode,
-          phase: enabled || mode !== 'off' ? (st?.phase ?? 'idle') : 'off',
-          issue: st?.issue ?? null,
-          picksLine: st?.picksLine ?? null,
-          via: st?.via ?? null,
-          pushedAt: st?.pushedAt ?? null,
-          pushErr: st?.pushErr ?? null,
-          settled: st?.settled ?? false,
-          lastError: st?.lastError ?? null,
-          spec: s.spec,
-          bets: s.bets,
-          cost: s.cost,
-        }
-      }
-      // FZ-6 降级语义（MB-25）：push/pushTargetMasked 字段保留、值域与 v1 连续
+      for (const k of GAME_ORDER) out[k] = gameCard(k, cfg, drawTodaySet)
       const enabledChannels = (cfg.channels ?? []).filter((c) => c && c.enabled !== false)
-      const qqChannel = enabledChannels.find((c) => c.type === 'qq')
-      let pushTargetMasked = ''
-      if (qqChannel) {
-        const sidecar = resolveChannelCfg(qqChannel, USER_CHANNELS_DIR)
-        pushTargetMasked = String(sidecar.target ?? '').replace(/^(\d{3})\d+(\d{2})$/, '$1****$2') || maskValue(sidecar.target ?? '')
-      }
       const eventsCounts = bus.pendingCounts()
-      // 成本估算（BC-107 双显示；本地库 ≥10 期实测 dataPack 长度，MD-17）
+      // 成本估算（BC-107 双显示；本地库 ≥10 期实测 dataPack 长度，MD-17）——频率与拆分前一致
       const packChars = {}
       for (const k of GAME_ORDER) {
         const st = store.status(k)
@@ -740,32 +772,7 @@ export function startKoiScheduler(ctx, opts) {
           try { packChars[k] = dataPack(k, store.getRecent(k, lever.tail), { tailCount: lever.tail }).length } catch {}
         }
       }
-      return {
-        ok: true, today, time: hhmm(),
-        schedulerOk: true,
-        games: out,
-        modes: Object.fromEntries(GAME_ORDER.map((k) => [k, cfg.modes?.[k] ?? { mode: modeOfGame(cfg, k) }])),
-        carry: (state?.carry ?? []).length,
-        holiday: isHoliday(today, cfg.holidays),          // C2/FR-002：今天是否休市
-        repushQueue: (eventsCounts.queued ?? 0) + (eventsCounts.retrying ?? 0),   // FZ-6 字段：事件层队列口径
-        events: { ...eventsCounts, heartbeatRed: state?.heartbeatRed ?? false },
-        heartbeatCheckedAt: state?.heartbeatCheckedAt ?? null,   // 关机缺席如实展示（§2.2.1-6④）
-        mind: mindStatus(cfg),                            // FR-023：认知层总开关与握手状态（只读）
-        ledger: ledgerTotals(readLedger()),
-        ledgerText: ledgerTotalsText(ledgerTotals(readLedger())),
-        push: { ok: enabledChannels.length > 0, detail: '推送已迁移至渠道层，见 channels' },
-        pushTargetMasked,
-        tiers: Object.fromEntries(GAME_ORDER.map((k) => {
-          const s = tierStakes(tierOf(cfg, k))
-          return [k, s ? { id: tierOf(cfg, k), ...s } : null]
-        })),
-        tierTable: Object.fromEntries(GAME_ORDER.map((k) => [k, tiersForGame(k).map((t) => ({ id: t.id, label: t.label, bets: t.bets, cost: t.cost }))])),
-        verbosity: cfg.verbosity ?? 'concise',
-        effort: { tier: lever.tier, leverActive: leverActive(cfg) },
-        backbone: Object.fromEntries(GAME_ORDER.map((k) => [k, store.status(k)])),
-        costEstimate: costEstimate(cfg, { packChars }),
-        lastError: state?.lastError ?? null,
-      }
+      return statusPayload({ cfg, today, lever, out, enabledChannels, eventsCounts, packChars })
     },
   }
 }
