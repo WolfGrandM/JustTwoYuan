@@ -44,7 +44,7 @@ import { createAdvisory } from './advisory.js'
 import { createUsageTracker, demotionFor, leversFor, leverActive, costEstimate, estTokens } from './usage.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
-import { loadAdapters, channelsStatus, resolveChannelCfg, maskValue } from './channels/index.js'
+import { loadAdapters, resolveChannelCfg, maskValue } from './channels/index.js'
 
 const TICK_MS = 30_000
 const ATTEMPT_GAP_MS = 2 * 60_000        // 两次出号尝试至少隔 2 分钟
@@ -201,12 +201,6 @@ export function classifyHostError(err, patterns = DEFAULT_NO_MODEL_PATTERNS) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const hhmm = (d = new Date()) => d.toLocaleTimeString('sv-SE', { hour12: false }).slice(0, 5)
 const todayStr = (d = new Date()) => d.toLocaleDateString('sv-SE')
-
-export function readConfigFile(configPath, defaults) {
-  let user = {}
-  try { user = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch { /* 没配用默认 */ }
-  return { ...structuredClone(defaults), ...user }
-}
 
 export function startKoiScheduler(ctx, opts) {
   const {
