@@ -288,3 +288,14 @@ test('C8 跨天重建携带 repushQueue：state.json 重建后队列不丢（T3 
   assert.equal(rebuilt.repushQueue[0].attempts, 2)
   assert.equal(rebuilt.carry.length, 1)
 })
+
+// ── TF-15/P9：心跳红标恢复判定（settle-core.channelsAllRecovered，主人拍板「探针恢复即清」）──
+import { channelsAllRecovered } from '../lib/settle-core.js'
+test('channelsAllRecovered：启用渠道非空且全 ok 才算恢复（空/停用/任一 error 均不恢复）', () => {
+  assert.equal(channelsAllRecovered([]), false, '空渠道列表 ≠ 恢复')
+  assert.equal(channelsAllRecovered([{ enabled: false, status: 'error' }]), false, '仅停用渠道 ≠ 恢复')
+  assert.equal(channelsAllRecovered([{ enabled: true, status: 'ok' }]), true)
+  assert.equal(channelsAllRecovered([{ enabled: true, status: 'ok' }, { enabled: true, status: 'error' }]), false, '任一启用渠道 error ≠ 恢复')
+  assert.equal(channelsAllRecovered([{ enabled: true, status: 'ok' }, { enabled: false, status: 'error' }]), true, '停用渠道不参与判定')
+  assert.equal(channelsAllRecovered(null), false, '非数组防御')
+})

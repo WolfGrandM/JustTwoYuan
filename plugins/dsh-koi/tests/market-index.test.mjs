@@ -95,6 +95,7 @@ test('status：200 + FZ-6 既有字段形状 + 降级语义 + channels 加法；
   assert.ok(j.ledgerText)
   assert.ok(Array.isArray(j.channels) && j.channels.some((c) => c.type === 'panel' && c.status === 'ok'))
   assert.ok(j.modes && j.backbone && j.costEstimate && j.tiers && j.verbosity && j.effort)
+  assert.ok(j.donation && j.donation.text === '老实赚钱，很枯燥吧.jpg' && j.donation.enabled === true, 'TF-15#4：donation 展示配置透出（默认文案/启用）')
   assert.ok(j.allGames[0].drawAt, 'GAMES.drawAt 透出（向导时间校验用）')
   const r2 = await call('/dsh-koi/api/status', { host: 'evil.example.com' }).promise
   assert.equal(r2.code, 403)

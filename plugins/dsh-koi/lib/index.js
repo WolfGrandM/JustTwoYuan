@@ -162,7 +162,9 @@ export default {
       const st = sched.status()
       const channels = await channelsNow()
       st.channels = channels   // 渠道层探针（含掩码回显；v1 的单渠道探测语义已随渠道层重构）
-      st.pet = readJson(CONFIG_FILE, {})?.pet ?? { enabled: true, corner: 'br' }   // 桌宠开关（关闭则前端不挂载）
+      const cfgRaw = readJson(CONFIG_FILE, {}) ?? {}
+      st.pet = cfgRaw.pet ?? { enabled: true, corner: 'br' }   // 桌宠开关（关闭则前端不挂载）
+      st.donation = cfgRaw.donation ?? null                     // TF-15#4：捐献行展示配置（enabled/text/link/image）
       json(res, 200, { ...base, ...st })
     })
 

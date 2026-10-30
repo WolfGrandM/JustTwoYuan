@@ -17,8 +17,8 @@ const CWL_SSQ_ITEMS = [
   {
     code: '2026121', date: '2026-10-22 00:00:00', red: '02,07,20,24,26,30', blue: '2',
     prizegrades: [
-      { type: '1', typemoney: '10000000' },     // 福彩 API 数字串（无逗号；带逗号归一是体彩路径 parseSportteryPrizes 的职责）
-      { type: '3', typemoney: '3000' },
+      { type: '1', typemoney: '10000000' },     // 福彩 API 数字串（TF-15#2 起带逗号串也归一，与体彩路径同口径）
+      { type: '3', typemoney: '3,000' },        // 带逗号金额串 → 3000（逗号剥离，不再 NaN 静默过滤）
       { type: '9', typemoney: '0' },            // 0 元 → 过滤不出场
     ],
   },

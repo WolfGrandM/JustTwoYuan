@@ -44,7 +44,7 @@ import { createAdvisory } from './advisory.js'
 import { createUsageTracker, demotionFor, leversFor, leverActive, costEstimate, estTokens } from './usage.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
-import { loadAdapters, resolveChannelCfg, maskValue } from './channels/index.js'
+import { loadAdapters, resolveChannelCfg, maskValue, channelsStatus } from './channels/index.js'
 import { hhmm as hhmmOf, todayStr as todayOf } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 import { waitJsonFile } from './fspoll.js'                             // T-06：轮询微工具单点（stopCheck 显式注入）
 
@@ -60,7 +60,7 @@ const VOID_HISTORY_COUNT = 50            // C1：期号跳跃时翻历史核实�
 // ── v1.1 纯逻辑层已搬迁 lib/settle-core.js（T-05：消除 events/drawstore→scheduler 循环①②）──
 // 本地消费（settleOne/tick/status/promptAgent 七符号）+ 原地 re-export 全部符号保既有 import 路径兼容
 import { isHoliday, settleOutcome, buildMainPendingEntry, buildSupplementEntry, buildReversalEntry,
-         carryJobsFromEntries, classifyHostError } from './settle-core.js'
+         carryJobsFromEntries, classifyHostError, channelsAllRecovered } from './settle-core.js'
 export { isHoliday, settleOutcome, buildMainPendingEntry, buildSupplementEntry, buildReversalEntry,
          carryJobsFromEntries, retryIntervalMs, deadlineForKind, isPastDeadline, enqueueRepush,
          isStaleDraw, DEFAULT_NO_MODEL_PATTERNS, classifyHostError, REPUSH_QUEUE_MAX } from './settle-core.js'
@@ -566,6 +566,19 @@ export function startKoiScheduler(ctx, opts) {
         for (const k of drawToday) {
           const r = await bus.heartbeatForGame(k, modeOfGame(cfg, k), today)
           if (r.red) state.heartbeatRed = true   // 面板常驻红标（可见性兜底不依赖渠道）
+        }
+        // 心跳红标恢复探针（TF-15/P9，主人拍板「渠道探针恢复即清」）：红标存在时探一轮启用渠道，
+        // 全部 ok → 清除（消除「渠道已恢复但无滞留补发件可触发清除」的边缘滞留）。
+        if (state.heartbeatRed) {
+          try {
+            const { adapters } = await channelsOverview()
+            const cst = await channelsStatus(cfg.channels ?? [], { adapters, userDir: USER_CHANNELS_DIR })
+            if (channelsAllRecovered(cst)) {
+              state.heartbeatRed = false
+              saveState()
+              log('[koi] 心跳红标清除：启用渠道探针全部恢复')
+            }
+          } catch (e) { log('[koi] 心跳恢复探针异常：' + String(e?.message ?? e).slice(0, 100)) }
         }
         saveState()
       }

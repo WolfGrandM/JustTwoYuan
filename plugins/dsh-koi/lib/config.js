@@ -37,6 +37,7 @@ export function buildConfigTemplate() {
     verbosity: 'concise',
     advisory: { enabled: true },
     pet: { enabled: true, corner: 'br', zIndex: 2147483000 },
+    donation: { enabled: true, text: '老实赚钱，很枯燥吧.jpg', link: '', image: '' },   // TF-15#4：作者捐献行（占位可配置；主人 2026-10-31 拍板文案）
     events: { retentionDays: 90, listWindow: 200 },
     backfill: { targetIssues: null, batchSize: 100, batchGapMs: 2000, retryMax: 3, offpeakOnly: true },   // 第二波 §7（W2A-06/07）
     ingest: { maxFileMB: 20, maxCleanChars: 200000, dedup: 'merged', offpeakOnly: true },                  // 第二波 §7（W2A-22：maxCleanChars=清洗后诚实上限）
@@ -154,6 +155,11 @@ export function validateConfig(cfg) {
   if (pet.enabled !== undefined && typeof pet.enabled !== 'boolean') err('pet.enabled 必须是布尔')
   if (pet.corner !== undefined && !CORNERS.includes(pet.corner)) err(`pet.corner 必须是 ${CORNERS.join('/')}`)
   if (pet.zIndex !== undefined && !Number.isInteger(Number(pet.zIndex))) err('pet.zIndex 必须是整数')
+  const don = cfg.donation ?? {}
+  if (don.enabled !== undefined && typeof don.enabled !== 'boolean') err('donation.enabled 必须是布尔')
+  for (const k of ['text', 'link', 'image']) {
+    if (don[k] !== undefined && (typeof don[k] !== 'string' || don[k].length > (k === 'text' ? 60 : 200))) err(`donation.${k} 必须是 ≤${k === 'text' ? 60 : 200} 字符的字符串`)
+  }
   const ev = cfg.events ?? {}
   if (ev.retentionDays !== undefined && !(Number(ev.retentionDays) > 0)) err('events.retentionDays 必须大于 0')
   if (ev.listWindow !== undefined && !(Number(ev.listWindow) > 0)) err('events.listWindow 必须大于 0')

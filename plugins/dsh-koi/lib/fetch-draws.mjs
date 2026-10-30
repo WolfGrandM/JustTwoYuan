@@ -57,7 +57,7 @@ const mapCwlItem = (it) => ({
   red: String(it.red ?? '').split(',').map(Number).filter((x) => x >= 1 && x <= 33),
   blue: Number(it.blue),
   prizeGrades: Object.fromEntries((it.prizegrades ?? [])
-    .map((p) => [Number(p.type), Number(p.typemoney ?? 0)])
+    .map((p) => [Number(p.type), Number(String(p.typemoney ?? 0).replace(/,/g, ''))])   // TF-15#2：带逗号金额串归一（体彩路径先例；上游改格式不再 NaN 静默丢奖级）
     .filter(([_, m]) => m > 0)),
 })
 const mapSportteryItem = (gameKey) => (it) => {

@@ -156,3 +156,13 @@ export function classifyHostError(err, patterns = DEFAULT_NO_MODEL_PATTERNS) {
   }
   return { kind: 'other', hint: msg.slice(0, 200) }
 }
+
+/**
+ * 心跳红标恢复判定（TF-15/P9，主人拍板「渠道探针恢复即清」）：
+ * 启用渠道非空且全部探针 ok → 红标清除条件成立（否则维持红标，等下一次探针）。
+ * @param statuses - channelsStatus 输出（{enabled, status:'ok'|'error', …} 数组）
+ */
+export function channelsAllRecovered(statuses) {
+  const enabled = (Array.isArray(statuses) ? statuses : []).filter((c) => c && c.enabled !== false)
+  return enabled.length > 0 && enabled.every((c) => c.status === 'ok')
+}

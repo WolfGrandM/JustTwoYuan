@@ -51,6 +51,10 @@ window.__ModuleLoader__.load({
       ".koi-evt{font-size:12px;line-height:18px;padding:6px 8px;border-radius:8px;background:rgba(127,127,127,.08)}",
       // 桌宠（前缀 koi-pet-；样式隔离 §2.2.3-2）
       ".koi-tabs{display:flex;gap:8px;margin:4px 0 12px;flex-wrap:wrap}",
+      ".koi-donation{margin-top:14px;display:flex;flex-direction:column;gap:4px}",
+      ".koi-don-line{font-size:11px;color:var(--dsw-alias-label-tertiary);cursor:pointer;user-select:none}",
+      ".koi-don-line:hover{color:var(--dsw-alias-label-secondary)}",
+      ".koi-don-link{font-size:12px;color:var(--dsw-alias-brand-primary,#4a9eff)}",
       ".koi-pet-container{position:fixed;z-index:2147483000;pointer-events:none}",
       ".koi-pet-container.br{right:16px;bottom:16px}",
       ".koi-pet-container.bl{left:16px;bottom:16px}",
@@ -489,6 +493,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState("");
       const [showWizard, setShowWizard] = useState(false);
       const [tab, setTab] = useState("overview");
+      const [donOpen, setDonOpen] = useState(false);
       const [readId, setReadId] = useState(readLastRead());
       const pollRef = useRef(null);
       const { events, lastId } = useEvents();
@@ -579,7 +584,16 @@ window.__ModuleLoader__.load({
               q.error ? h("div", { className: "koi-err" }, q.error) : null,
               q.message ? h("div", { className: "koi-out" }, q.message) : null);
           }),
-          err ? h("div", { className: "koi-err" }, err) : null) : null,
+          err ? h("div", { className: "koi-err" }, err) : null,
+          st.donation?.enabled !== false ? (() => {
+            const don = st.donation ?? {};
+            return h("div", { className: "koi-donation" },
+              h("span", { className: "koi-don-line", title: "完全自愿 · 与功能无关 · 不发推送", onClick: () => setDonOpen(!donOpen) }, don.text ?? "🐟 请作者喝杯水"),
+              donOpen ? h("div", { className: "koi-don-body" },
+                don.image ? h("img", { src: don.image, alt: "donation", style: { maxWidth: 220, borderRadius: 8 } }) : null,
+                don.link ? h("a", { href: don.link, target: "_blank", rel: "noreferrer", className: "koi-don-link" }, "爱发电 · 支持作者") : null,
+                !don.image && !don.link ? h("span", { className: "koi-hint" }, "（收款方式待作者配置：koi.config.json 的 donation.image / donation.link）") : null) : null);
+          })() : null) : null,
         tab === "events" ? h("div", null,
           h("div", { className: "koi-card" },
             h("div", { className: "koi-sec-title" }, `事件（最近 ${events.length} 条；失败原因/队列/心跳兜底全在此）`),
