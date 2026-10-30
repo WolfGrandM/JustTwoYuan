@@ -24,12 +24,15 @@ const configPath = path.join(dir, 'koi.config.json')
 const dataDir = path.join(dir, 'koi')
 fs.mkdirSync(path.join(dataDir, 'draws'), { recursive: true })
 // 本地库预置 30 期新鲜数据（backbone POST 走本地零网络路径）
+// ⚠ 日期必须相对当天生成（TF-14）：硬编码日期会在 7 天后被 isStaleDraw 判过期，
+//   ensureRecent 转走真实网络路径 → fetched≠0 → 断言失败（2026-10-29 时间炸弹实录）
+const dayStr = (offset) => new Date(Date.now() - offset * 86_400_000).toLocaleDateString('sv-SE')
 for (const g of ['ssq', 'dlt', 'p3']) {
   const entries = Array.from({ length: 30 }, (_, i) => g === 'ssq'
-    ? { issue: String(2026121 - i), date: new Date(Date.parse('2026-10-22') - i * 86_400_000).toLocaleDateString('sv-SE'), red: [2, 7, 20, 24, 26, 30], blue: 2 }
+    ? { issue: String(2026121 - i), date: dayStr(i), red: [2, 7, 20, 24, 26, 30], blue: 2 }
     : g === 'dlt'
-      ? { issue: String(26120 - i), date: new Date(Date.parse('2026-10-21') - i * 86_400_000).toLocaleDateString('sv-SE'), front: [1, 6, 10, 15, 32], back: [3, 4] }
-      : { issue: String(26282 - i), date: new Date(Date.parse('2026-10-23') - i * 86_400_000).toLocaleDateString('sv-SE'), digits: [6, 4, 7] })
+      ? { issue: String(26120 - i), date: dayStr(i), front: [1, 6, 10, 15, 32], back: [3, 4] }
+      : { issue: String(26282 - i), date: dayStr(i), digits: [6, 4, 7] })
   fs.writeFileSync(path.join(dataDir, 'draws', `${g}.json`), JSON.stringify({ schemaVersion: 1, entries }))
 }
 process.env.DSH_HOME = dir
