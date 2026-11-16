@@ -26,9 +26,11 @@ if errorlevel 1 (
 
 echo [2/3] 取带 token 的地址 ...
 set "URL="
-for /f "usebackq delims=" %%u in (`ssh -i "%KEY%" -o StrictHostKeyChecking=no -o BatchMode=yes %HOST% dsh-url`) do set "URL=%%u"
+for /f "usebackq delims=" %%u in (`ssh -i "%KEY%" -o "StrictHostKeyChecking=no" -o "BatchMode=yes" %HOST% dsh-url`) do set "URL=%%u"
 if "%URL%"=="" (
   echo [失败] 取不到地址，检查密钥或网络。
+  echo         二维码页仍可直接试：http://127.0.0.1:8099/
+  start "" "http://127.0.0.1:8099/"
   pause
   exit /b 1
 )
