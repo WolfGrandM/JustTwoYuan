@@ -21,11 +21,11 @@ if errorlevel 1 (
 echo [2/3] 取带 token 的地址 ...
 if exist "%OUT%" del "%OUT%" >nul 2>&1
 if exist "%ERR%" del "%ERR%" >nul 2>&1
-ssh -i "%KEY%" -o StrictHostKeyChecking=no -o BatchMode=yes %HOST% dsh-url > "%OUT%" 2> "%ERR%"
+ssh -i "%KEY%" -o StrictHostKeyChecking=no -o BatchMode=yes %HOST% "dsh-url; journalctl -u dsh -n 300 --no-pager | grep -Eo http://127.0.0.1:3080/[^[:space:]]+ | tail -3" > "%OUT%" 2> "%ERR%"
 set "SSHRC=%ERRORLEVEL%"
 
 echo [3/3] 打开面板 ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$o='%OUT%';$e='%ERR%';$u='';if(Test-Path $o){$u=(Get-Content -Raw $o).Trim()};if($u -match '^https?://'){Start-Process $u;Write-Host ('  面板：'+$u)}else{Write-Host ('[失败] 取不到地址，ssh 退出码=%SSHRC%');if(Test-Path $e){Get-Content $e};Write-Host '排查：密钥是否在 "+$KEY+"，或手动执行 ssh -i ... dsh-url';exit 9}"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$o='%OUT%';$e='%ERR%';$u='';if(Test-Path $o){$m=@(Get-Content $o | Where-Object { $_ -match '^https?://' });if($m.Count -gt 0){$u=([string]$m[$m.Count-1]).Trim()}};if($u){Start-Process $u;Write-Host ('  面板：'+$u)}else{Write-Host ('[失败] 取不到地址，ssh 退出码=%SSHRC%');if(Test-Path $o){Write-Host '--- stdout ---';Get-Content $o};if(Test-Path $e){Write-Host '--- stderr ---';Get-Content $e};Write-Host '排查：先手动跑 ssh -i ... root@120.55.184.195 "dsh-url; journalctl -u dsh -n 300 | grep -Eo http://127.0.0.1:3080/\\S+"';exit 9}"
 if errorlevel 9 (
   pause
   exit /b 1
