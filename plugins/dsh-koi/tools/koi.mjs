@@ -25,6 +25,7 @@
  *   node koi.mjs migrate-v2 [--dry-run]                v1.1 → v2 配置一次性迁移（作者实例升级，S-125）
  *   node koi.mjs report weekly|monthly [--no-offpeak]  手动生成复盘报告（B-21 不受 mind 闸限；BC-012 错峰守卫；计量照记）
  *   node koi.mjs veto [factorId] --note <理由>          否决窗口内晋升（无参=列待否决清单；FR-035/§9-R6）
+ *   node koi.mjs migrate-archive [--dry-run] [--bakdir d] 预测档案迁移 review.db（dry-run/实跑/幂等三跑；备份硬门槛；生产实跑待主人授权）
  *   node koi.mjs hygiene [path]                        市场包卫生扫描（零命中退出 0，AC-102）
  *
  * `push --text` 已退役（通知走事件层/渠道；测试消息用 `channels test`）。
@@ -50,6 +51,7 @@ import { createReviewStore } from '../lib/review/store.js'
 import { createNarrator } from '../lib/review/narrate.js'
 import { createWeeklyReview } from '../lib/review/weekly.js'
 import { createMonthlyReview } from '../lib/review/monthly.js'
+import { migrateArchive } from '../lib/review/migrate.js'
 import { hasProbabilityClaim } from '../lib/render.js'
 import { inOffpeakWindow } from '../lib/backfill.js'
 import { buildConfigTemplate, buildConfigDefaults, readConfig, validateConfig, checkGates, modeOf, tierOf, maskConfig } from '../lib/config.js'
@@ -588,6 +590,20 @@ async function main() {
     if (!r.ok) { console.error(`✗ ${r.error}`); process.exit(1) }
     console.log(`✓ 已否决：${factorId} promoted→observing（actor=owner，审计注记已入 factor_state_log；生效门恢复为未生效）`)
     return
+  }
+
+  // ── M4 档案迁移（§4.2 三跑：dry-run 只读 / 实跑（备份硬门槛）/ 幂等短路；不改 archiveAuthoritative 开关）──
+  if (cmd === 'migrate-archive') {
+    const r = await migrateArchive({
+      dataDir: DATA_DIR,
+      dryRun: hasFlag('--dry-run'),
+      bakDir: arg('--bakdir'),
+      now: () => new Date(),
+      log: (m) => console.log(m),
+      readCfg: () => cfg(),
+    })
+    for (const line of r.report ?? []) console.log('  ' + line)
+    process.exit(r.code ?? (r.ok ? 0 : 1))
   }
 
   if (cmd === 'hygiene') {

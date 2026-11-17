@@ -48,6 +48,7 @@ import { createNarrator } from './review/narrate.js'
 import { createWeeklyReview } from './review/weekly.js'
 import { createHealthScanner } from './review/health.js'
 import { createMonthlyReview } from './review/monthly.js'
+import { computeForIssue, attachAttribution } from './review/attribution.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
 import { loadAdapters, resolveChannelCfg, maskValue, channelsStatus } from './channels/index.js'
@@ -197,6 +198,27 @@ export function startKoiScheduler(ctx, opts) {
     emit: emitNotify, now: nowFn, readCfg: () => cfgNow(), log, lock: jobLock,
     reportsDir: path.join(dataDir, 'review', 'reports'),
   })
+  // M4/T5：settle 观察者（§2.3③）——archive 增量行 + 归因入档，受 review.archiveAuthoritative
+  // 开关控制（默认 false：零行为，三 JSON 唯一写面与现状逐位一致；true 的生产切换待主人授权 §4.2）。
+  // 只读消费 judge 结果与本地质历史切片——相位机与转移语义零改动（FZ-5 settle-core 零 diff）。
+  function reviewOnSettled(entry, judged, result) {
+    if (cfgNow()?.review?.archiveAuthoritative !== true) return null
+    const archived = reviewStore.upsertArchive({ ...entry, result, prize: judged.money, grades: judged.grades })
+    const factorImpls = reviewStore.listFactors()
+      .map((f) => backtest.factorOf(f.id))
+      .filter((f) => f && f.game === entry.game)
+    if (factorImpls.length && result) {
+      const asc = [...store.getRecent(entry.game, Infinity)].reverse()   // 本地库升序（最新在前 → 反转）
+      const idx = asc.findIndex((h) => String(h.issue) === String(entry.issue))
+      if (idx >= 0) {
+        const { items } = computeForIssue({ game: entry.game, asc: asc.slice(0, idx), draw: result, factors: factorImpls })
+        attachAttribution(reviewStore, { archiveId: archived.id, items })
+      } else {
+        log(`[koi] 复盘入档：本地库缺第 ${entry.issue} 期历史，归因如实跳过不虚构`)
+      }
+    }
+    return archived.id
+  }
   // 复盘段入口（tick 调用；mind.enabled 双向闸——AC-008 三零断言的闸侧）
   async function reviewTickView({ today, now: nowD } = {}) {
     const cfg = cfgNow()
@@ -466,6 +488,8 @@ export function startKoiScheduler(ctx, opts) {
           })
         }
       } catch (e) { log(`[koi] advisory 对照观测失败（不影响对账）：${String(e?.message ?? e)}`) }
+      // M4/T5 观察者（review.archiveAuthoritative 默认 false → 零行为；相位机与转移语义零改动——§2.3③）
+      try { reviewOnSettled(entry, judged, result) } catch (e) { log(`[koi] 复盘入档观察者异常（不影响对账）：${String(e?.message ?? e).slice(0, 120)}`) }
       log(`[koi] ${gameKey} ${entry.issue} 期对账完成${wasGivenUp ? '（补判）' : ''}：${gradeSummaryText(gameKey, judged)}，中 ${judged.money} 元${entry.pushedResult ? '，战果事件已送达' : '，战果送达见事件面板'}`)
       return true
     } catch (e) {
@@ -828,12 +852,13 @@ export function startKoiScheduler(ctx, opts) {
     ingest,         // 第二波：学习摄入流水线（上传/inbox/CLI 三通道；tick 只做发现与守卫内处理）
     cardsStore,     // 第二波：卡片库（cards 单写者 = 持锁串行域，W2A-23）
     backtest,       // 第二波：回测引擎（内置六件已注册；手动/链式触发）
-    review: {       // M4 复盘引擎（T2 weekly/health + T3 monthly；store 只读面供 /api/review T6）
+    review: {       // M4 复盘引擎（T2 weekly/health + T3 monthly + T5 onSettled；store 只读面供 /api/review T6）
       store: reviewStore,
       weekly: reviewWeekly,
       monthly: reviewMonthly,
       health: reviewHealth,
       tickView: reviewTickView,
+      onSettled: reviewOnSettled,   // T5 观察者（archiveAuthoritative 开关控制；测试/面板可直调）
     },
     channelsOverview,
     status() {
