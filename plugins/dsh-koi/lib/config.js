@@ -22,9 +22,9 @@ const MODES_DEFAULT = () => Object.fromEntries(GAME_ORDER.map((k) => [
 /** 首写模板（index.js 落盘用；与 docs/16 §5.3 逐字段一致；出厂默认档 = 各彩种最小档，MB-29） */
 export function buildConfigTemplate() {
   return {
-    _说明: '锦鲤市场版配置（schemaVersion 2）。channels=通知渠道（panel 为内置桌宠渠道，出厂启用；其他渠道在面板或 CLI 添加，凭证存 koi/channels/ 侧车文件）；modes=每彩种 off/manual/auto 三态（出厂 manual）；budget.weeklyCap=每周 token 预算；effort.tier=思考力度四档；verbosity=输出详略两档；petBridge=桌宠桥接（默认关，开启后仅 won=true 战果投喂 dsh-pet 气泡，ADR-0007）；改完下一轮 tick 生效（约 30 秒）。',
+    _说明: '锦鲤市场版配置（schemaVersion 2）。channels=通知渠道（panel 为内置桌宠渠道，出厂启用；webhook 为内置通用 webhook 渠道，出厂停用——在 koi/channels/webhook.config.json 侧车填写目标地址与可选鉴权头后，把本条目的 enabled 改为 true 即生效；其他渠道在面板或 CLI 添加，凭证一律存 koi/channels/ 侧车文件不进主配置）；modes=每彩种 off/manual/auto 三态（出厂 manual）；budget.weeklyCap=每周 token 预算；effort.tier=思考力度四档；verbosity=输出详略两档；petBridge=桌宠桥接（默认关，开启后仅 won=true 战果投喂 dsh-pet 气泡，ADR-0007）；改完下一轮 tick 生效（约 30 秒）。',
     schemaVersion: SCHEMA_VERSION,
-    channels: [{ type: 'panel', enabled: true }],
+    channels: [{ type: 'panel', enabled: true }, { type: 'webhook', enabled: false }],   // webhook 出厂停用零行为（F6：渠道行开箱可见可配；url/凭证只在侧车，不随市场包分发示例 url）
     modes: MODES_DEFAULT(),
     time: { catchUpEnd: '19:50', settleAt: '22:00', settleGiveUp: '23:30', retryMinutes: 5, heartbeatAt: '22:30' },
     budget: {

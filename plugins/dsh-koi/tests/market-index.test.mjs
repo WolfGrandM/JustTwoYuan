@@ -78,7 +78,7 @@ test('首写模板 v2：apply 时落盘、零 QQ 字段（grep 断言）、schem
   }
   const j = JSON.parse(raw)
   assert.equal(j.schemaVersion, 2)
-  assert.deepEqual(j.channels, [{ type: 'panel', enabled: true }])
+  assert.deepEqual(j.channels, [{ type: 'panel', enabled: true }, { type: 'webhook', enabled: false }])
   assert.equal(j.modes.p3.mode, 'manual')
 })
 

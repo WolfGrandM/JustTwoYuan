@@ -23,7 +23,7 @@ test('首写模板 v2：零 QQ 字段（grep 断言，NFR-102/AC-102 前置）+ 
   }
   const t = buildConfigTemplate()
   assert.equal(t.schemaVersion, SCHEMA_VERSION)
-  assert.deepEqual(t.channels, [{ type: 'panel', enabled: true }], 'panel 内置渠道出厂启用（§5.3 权威）')
+  assert.deepEqual(t.channels, [{ type: 'panel', enabled: true }, { type: 'webhook', enabled: false }], 'panel 出厂启用（§5.3 权威）+ webhook 内置出厂停用（F6 零行为；url/凭证只在侧车，模板不分发示例 url）')
   for (const k of GAME_ORDER) {
     assert.equal(t.modes[k].mode, 'manual', `${k} 市场新用户默认手动`)
     assert.equal(t.modes[k].tier, k === 'ssq' ? 'ssq-d6b1' : k === 'dlt' ? 'dlt-f5b2' : 'p3-x1', `${k} 出厂 2 元基础档（主人拍板）`)
