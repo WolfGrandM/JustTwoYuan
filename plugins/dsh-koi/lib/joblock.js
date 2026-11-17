@@ -1,9 +1,9 @@
 /**
  * dsh-koi 后台作业互斥锁（第二波 W2A-20，BC-012「任一时刻至多一个后台作业」的市场版落点）——
- * koi/job-lock.json 落盘锁：backfill / ingest / backtest 三类后台作业跨进程互斥
+ * koi/job-lock.json 落盘锁：backfill / ingest / backtest / review（M4 复盘作业）四类后台作业跨进程互斥
  * （CLI 直跑与宿主进程经同一把锁文件串行）。
  *
- * 记录形状：{ kind, key, at, heartbeatAt }（kind ∈ backfill|ingest|backtest）。
+ * 记录形状：{ kind, key, at, heartbeatAt }（kind ∈ backfill|ingest|backtest|review）。
  * 心跳：持锁方每批/每步更新 heartbeatAt；停更超过 staleMs（默认 30 分钟）视为残留锁，
  * 可被抢占（抢占留痕：preempted 信息写入新锁记录并由调用方日志输出，绝不静默）。
  * io.js 原子写（防半写）；释放即删文件。
@@ -12,7 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 
-export const JOB_KINDS = ['backfill', 'ingest', 'backtest']
+export const JOB_KINDS = ['backfill', 'ingest', 'backtest', 'review']
 
 export function createJobLock({ file, now = () => new Date(), staleMs = 30 * 60_000, log = () => {} } = {}) {
   let held = null   // 本实例当前持有的 { kind, key }

@@ -42,6 +42,11 @@ import { createIngest } from './ingest.js'
 import { createEventBus } from './events.js'
 import { createAdvisory } from './advisory.js'
 import { createUsageTracker, demotionFor, leversFor, leverActive, costEstimate, estTokens } from './usage.js'
+import { hasProbabilityClaim } from './render.js'   // M4：narrate 三闸之②经注入（§2.4 禁 review→render import）
+import { createReviewStore } from './review/store.js'
+import { createNarrator } from './review/narrate.js'
+import { createWeeklyReview } from './review/weekly.js'
+import { createHealthScanner } from './review/health.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
 import { loadAdapters, resolveChannelCfg, maskValue, channelsStatus } from './channels/index.js'
@@ -153,6 +158,50 @@ export function startKoiScheduler(ctx, opts) {
     now: nowFn,
     log,
   })
+
+  // ── M4 复盘引擎（docs/28 §2.3①：DI 全回调注入；装配按任务进度增量——T2 装配 store/narrate/
+  //    weekly/health，monthly 于 T3 交付后并入，缺位模块相应入口跳过，T2 验收不含月报路径）──
+  const reviewStore = createReviewStore({ dataDir, now: nowFn, log })
+  const reviewNarrator = createNarrator({
+    promptAgent: (text) => promptAgent(text, { activity: 'review' }),   // BC-013：review 活动计量
+    usage,
+    readCfg: () => cfgNow(),
+    budgetState: (cfg) => budgetState(cfg ?? cfgNow()),
+    now: nowFn,
+    workDir,
+    log,
+    hasProbabilityClaim,
+    stopCheck: () => stopped,
+  })
+  const reviewWeekly = createWeeklyReview({
+    store: reviewStore, readLedger, readPreds, usage, narrator: reviewNarrator,
+    emit: emitNotify, now: nowFn, readCfg: () => cfgNow(), log, lock: jobLock,
+    reportsDir: path.join(dataDir, 'review', 'reports'),
+  })
+  const reviewHealth = createHealthScanner({
+    readPreds, readCfg: () => cfgNow(), store: reviewStore, now: nowFn, log, emit: emitNotify,
+    signalsOf: () => {
+      let pendingLlm = 0
+      try { pendingLlm = Number(ingest.statusOf()?.counts?.['pending-llm'] ?? 0) } catch { /* ingest 未就绪按 0 */ }
+      let noModelGames = 0
+      for (const k of GAME_ORDER) if (String(state?.games?.[k]?.lastError ?? '').includes('[no-model]')) noModelGames += 1
+      return { pendingLlm, noModelGames }
+    },
+    usageWeeksOf: () => { try { return reviewWeekly.usageWeeks() } catch { return [] } },
+    stateFile: path.join(dataDir, 'review', 'health-state.json'),
+  })
+  // 复盘段入口（tick 调用；mind.enabled 双向闸——AC-008 三零断言的闸侧）
+  async function reviewTickView({ today, now: nowD } = {}) {
+    const cfg = cfgNow()
+    if (cfg?.mind?.enabled !== true) return { skipped: 'mind-disabled' }
+    const d = today ?? todayStr()
+    const out = {}
+    try { out.weekly = await reviewWeekly.maybeRunWeekly({ today: d, nowHHMM: hhmm(nowD) }) }
+    catch (e) { log('[koi] 复盘段周报异常：' + String(e?.message ?? e).slice(0, 160)); out.weekly = { ok: false, error: String(e?.message ?? e).slice(0, 160) } }
+    try { out.health = await reviewHealth.scanAndAlert({ today: d }) }
+    catch (e) { log('[koi] 复盘段健康扫描异常：' + String(e?.message ?? e).slice(0, 160)); out.health = { ok: false, error: String(e?.message ?? e).slice(0, 160) } }
+    return out
+  }
 
   // ── 会话（她的专用会话，跨天保留记忆 → 越聊越有「日子」味）──────────────────
   let sessionReady = false
@@ -584,6 +633,9 @@ export function startKoiScheduler(ctx, opts) {
       }
       }   // ← !holiday（休市日静默顺延：出号段/对账段/致歉/心跳全部跳过）
 
+      // ── 复盘段（M4：mind.enabled 总闸；tick 内串行 await 保 events.json 单写者——§2.3②）──
+      await reviewTickView({ today }).catch((e) => log('[koi] 复盘段异常：' + String(e?.message ?? e).slice(0, 160)))
+
       // ── 事件层 pump（①：重试/补发/清理由事件层统一承担，MD-03）──
       await bus.pump().catch((e) => log('[koi] 事件层 pump 异常：' + String(e?.message ?? e)))
 
@@ -767,6 +819,12 @@ export function startKoiScheduler(ctx, opts) {
     ingest,         // 第二波：学习摄入流水线（上传/inbox/CLI 三通道；tick 只做发现与守卫内处理）
     cardsStore,     // 第二波：卡片库（cards 单写者 = 持锁串行域，W2A-23）
     backtest,       // 第二波：回测引擎（内置六件已注册；手动/链式触发）
+    review: {       // M4 复盘引擎（T2：weekly/health；monthly 于 T3 并入；store 只读面供 /api/review T6）
+      store: reviewStore,
+      weekly: reviewWeekly,
+      health: reviewHealth,
+      tickView: reviewTickView,
+    },
     channelsOverview,
     status() {
       const cfg = cfgNow()

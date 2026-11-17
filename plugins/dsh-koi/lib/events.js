@@ -17,13 +17,14 @@ import { renderEvent } from './render.js'
 import { loadAdapters, resolveChannelCfg, secretsOf, maskString } from './channels/index.js'
 import { retryIntervalMs, deadlineForKind, isPastDeadline, enqueueRepush, REPUSH_QUEUE_MAX } from './settle-core.js'
 
-export const EVENT_KINDS = ['predict', 'quickpick', 'result', 'apology', 'alert', 'advice', 'heartbeat', 'test']
+export const EVENT_KINDS = ['predict', 'quickpick', 'result', 'apology', 'alert', 'advice', 'heartbeat', 'test', 'review']
 const SEND_TIMEOUT_MS = 15_000
 // T-05：本行原 REPUSH_MAX = 20 手动镜像已删除——补发上限归一 settle-core.REPUSH_QUEUE_MAX（enqueueRepush 默认同参，FR-005 上限 20）
 
-/** 分类终止线的 kind 扩展映射（§2.2.1-2：advice/heartbeat → 次日 12:00；MD-08 包装不改原函数） */
+/** 分类终止线的 kind 扩展映射（§2.2.1-2：advice/heartbeat → 次日 12:00；MD-08 包装不改原函数；
+ *  M4/TF-6：review（周报/月报/健康告警）→ 12:00（B-26 语义完备线——panel 渠道恒达，实际不触发补发） */
 export function kindDeadline(kind, time = {}) {
-  if (kind === 'advice' || kind === 'heartbeat') return '12:00'
+  if (kind === 'advice' || kind === 'heartbeat' || kind === 'review') return '12:00'
   return deadlineForKind(kind, time)
 }
 
@@ -76,9 +77,12 @@ export function createEventBus({
     return (Array.isArray(cfg?.channels) ? cfg.channels : []).filter((c) => c && c.enabled !== false)
   }
 
-  /** 单事件一轮投递：逐启用渠道 adapter.send（15s 超时 + 单渠道异常隔离 + 凭证擦除） */
+  /** 单事件一轮投递：逐启用渠道 adapter.send（15s 超时 + 单渠道异常隔离 + 凭证擦除）。
+   *  M4/TF-6：panelOnly 事件（review 类）只投 type==='panel' 渠道——QQ/用户渠道不投（静默进面板）；
+   *  无 panel 渠道 → lastErr 注明「复盘事件仅进面板」且不再重试（QQ 永不投，重试无意义；事件仍落库可见）。 */
   async function deliver(ev, cfg, { repush = false } = {}) {
-    const list = enabledChannels(cfg)
+    const enabled = enabledChannels(cfg)
+    const list = ev.panelOnly === true ? enabled.filter((c) => c.type === 'panel') : enabled
     const { adapters: map } = await ensureAdapters()
     const secrets = []
     ev.delivery = []
@@ -102,6 +106,10 @@ export function createEventBus({
     }
     const allOk = list.length > 0 && ev.delivery.every((d) => d.ok)
     ev.status = allOk ? 'sent' : (ev.noRetry ? 'failed' : 'retrying')
+    if (ev.panelOnly === true && list.length === 0) {
+      ev.noRetry = true   // 无 panel 渠道可投：重试无意义（QQ 永不投）；面板可见性内建于落库
+      ev.status = 'failed'
+    }
     if (allOk) {
       ev.repushDelivered = repush
       // 迟到送达（过终止线才送达）= 渠道恢复 → 清红标回调（含 queued 补发与 retrying 晚到两种路径）
@@ -109,7 +117,11 @@ export function createEventBus({
     }
     if (!allOk) ev.lastErr = maskString((ev.delivery.find((d) => !d.ok)?.lastErr ?? 'unknown'), secrets)
     else ev.lastErr = null
-    if (list.length === 0) ev.lastErr = '无启用渠道（事件在面板可见，渠道恢复后补发）'
+    if (list.length === 0) {
+      ev.lastErr = ev.panelOnly === true
+        ? '复盘事件仅进面板（TF-6 收敛口径：QQ 等用户渠道不投）；事件在面板事件页可见'
+        : '无启用渠道（事件在面板可见，渠道恢复后补发）'
+    }
     return ev
   }
 
@@ -139,6 +151,7 @@ export function createEventBus({
       attempts: 0,
       noRetry: partial.noRetry ?? partial.kind === 'quickpick',   // 加餐例外：一次即止（FR-005 例外原文）
       won: partial.won ?? null,   // 中奖标记（仅 result 事件携带；未读/冒泡过滤用）
+      panelOnly: partial.panelOnly === true,   // M4/TF-6：review 类事件只进面板（deliver 过滤，QQ 不投）
     }
     const store = readStore()
     store.entries.push(ev)

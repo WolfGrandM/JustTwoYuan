@@ -16,13 +16,15 @@ const TITLES = {
   advice: (ev) => `💡【锦鲤 · 今日策略建议 · ${ev.gameName} · 第 ${ev.issue} 期】`,
   alert: () => `⚠️ 锦鲤告警`,
   heartbeat: () => `🔴 锦鲤心跳告警`,
+  review: (ev) => `📋【锦鲤复盘 · ${ev.title ?? '复盘'}】`,   // M4/TF-6：周报/月报/健康告警统一载体
 }
 
-/** 诚实基调句（预测类/战果类/建议类；BC-001 在输出面的恒拼落点） */
+/** 诚实基调句（预测类/战果类/建议类/复盘类；BC-001 在输出面的恒拼落点） */
 export function honestyTail(kind) {
   if (kind === 'result') return '开奖是随机的，图个乐～ 明天继续攒运气！'
   if (kind === 'advice') return '建议不记账；建议不会自动生效，换档请手动操作。'
   if (kind === 'predict' || kind === 'quickpick') return '开奖是独立随机事件，本内容不改变中奖概率。'
+  if (kind === 'review') return '命中率只作与随机基线对照的观测值。'   // M4/BC-001：复盘事件恒拼
   return ''
 }
 
@@ -44,7 +46,7 @@ export function renderEvent(ev, { verbosity = 'concise' } = {}) {
   }
   if (flags.quickpick) lines.push('（加餐 · 不记账）')
   if (flags.manual) lines.push('（手动推荐 · 不记账）')
-  if (ev.message && ['apology', 'alert', 'heartbeat', 'advice'].includes(kind)) lines.push(String(ev.message))
+  if (ev.message && ['apology', 'alert', 'heartbeat', 'advice', 'review'].includes(kind)) lines.push(String(ev.message))
   let summaryRejected = false
   if (verbosity === 'chatty' && ['predict', 'quickpick', 'result'].includes(kind)) {
     const s = String(ev.summary ?? '').trim()
