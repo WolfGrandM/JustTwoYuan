@@ -64,18 +64,18 @@ export function createUsageTracker({ dataDir, now = () => new Date(), keepWeeks 
   }
   return {
     fileOf: () => FILE,
-    /** 记一笔估算用量（activity ∈ predict/learning/advisory）；周切换时归档重置 */
+    /** 记一笔估算用量（activity ∈ predict/learning/advisory/review——review 为 M4 复盘叙述/归因叙述，BC-013）；周切换时归档重置 */
     record(activity, tokens) {
       const s = ensureWeek(load())
       s.entries.push({ at: now().toISOString(), activity, tokens: Math.max(0, Math.round(tokens)), est: true })
       writeJsonAtomic(FILE, s)
       return s
     },
-    /** 本周用量 {total, predict, learning, advisory, week} */
+    /** 本周用量 {total, predict, learning, advisory, review, week} */
     weekTotals() {
       const s = ensureWeek(load())
       writeJsonAtomic(FILE, s)   // 周切换时的归档落盘
-      const t = { total: 0, predict: 0, learning: 0, advisory: 0, week: s.week }
+      const t = { total: 0, predict: 0, learning: 0, advisory: 0, review: 0, week: s.week }
       for (const e of s.entries ?? []) {
         t.total += Number(e.tokens ?? 0)
         if (t[e.activity] != null) t[e.activity] += Number(e.tokens ?? 0)
