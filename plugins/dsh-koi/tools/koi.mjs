@@ -23,6 +23,8 @@
  *          [--smoke] [--no-offpeak]                    backtest gold = 四金样本自检（AC-012 适配）
  *   node koi.mjs events list [--limit N]               事件列表（含失败原因/队列）
  *   node koi.mjs migrate-v2 [--dry-run]                v1.1 → v2 配置一次性迁移（作者实例升级，S-125）
+ *   node koi.mjs report weekly|monthly [--no-offpeak]  手动生成复盘报告（B-21 不受 mind 闸限；BC-012 错峰守卫；计量照记）
+ *   node koi.mjs veto [factorId] --note <理由>          否决窗口内晋升（无参=列待否决清单；FR-035/§9-R6）
  *   node koi.mjs hygiene [path]                        市场包卫生扫描（零命中退出 0，AC-102）
  *
  * `push --text` 已退役（通知走事件层/渠道；测试消息用 `channels test`）。
@@ -43,7 +45,13 @@ import { createJobLock } from '../lib/joblock.js'
 import { createCardsStore } from '../lib/cards.js'
 import { createBacktestWithBuiltins } from '../lib/backtest.js'
 import { createIngest } from '../lib/ingest.js'
-import { createUsageTracker } from '../lib/usage.js'
+import { createUsageTracker, demotionFor } from '../lib/usage.js'
+import { createReviewStore } from '../lib/review/store.js'
+import { createNarrator } from '../lib/review/narrate.js'
+import { createWeeklyReview } from '../lib/review/weekly.js'
+import { createMonthlyReview } from '../lib/review/monthly.js'
+import { hasProbabilityClaim } from '../lib/render.js'
+import { inOffpeakWindow } from '../lib/backfill.js'
 import { buildConfigTemplate, buildConfigDefaults, readConfig, validateConfig, checkGates, modeOf, tierOf, maskConfig } from '../lib/config.js'
 import { TIERS, tierById, judgeTier, v1EquivTier, specText } from '../lib/tiers.js'
 import { loadAdapters, channelsStatus, resolveChannelCfg, maskChannelCfg } from '../lib/channels/index.js'
@@ -494,6 +502,92 @@ async function main() {
   if (cmd === 'migrate-v2') {
     const code = await migrateV2({ dryRun: hasFlag('--dry-run'), weeklyCap: arg('--weekly-cap') })
     process.exit(code)
+  }
+
+  // ── M4 复盘报告手动生成（B-21：CLI 不受 mind 闸限制；BC-012 错峰守卫 + --no-offpeak 显式越过；
+  //    计量照记——narrator 走 usage.record('review', …)。CLI 无宿主会话 → 叙述如实降级 code-only）──
+  if (cmd === 'report') {
+    const kind = process.argv[3]
+    if (!['weekly', 'monthly'].includes(kind)) { console.error('用法：report weekly|monthly [--no-offpeak]'); process.exit(1) }
+    if (inOffpeakWindow(new Date()) && !hasFlag('--no-offpeak')) {
+      console.error('错峰窗口（17:00–22:30）内不执行叙述类复盘生成（BC-012）：22:30 后再试，或 --no-offpeak 显式越过')
+      process.exit(1)
+    }
+    const reviewStore = createReviewStore({ dataDir: DATA_DIR, log: (m) => console.log(m) })
+    const usageTracker = createUsageTracker({ dataDir: DATA_DIR })
+    const bus = makeBus()
+    const narrator = createNarrator({
+      promptAgent: async () => { throw new Error('CLI 形态无宿主会话——叙述降级 code-only（宿主侧生成才有 LLM 叙述，S-119 同款诚实路径）') },
+      usage: usageTracker,
+      readCfg: () => cfg(),
+      budgetState: (c) => {
+        const totals = usageTracker.weekTotals()
+        const demo = demotionFor({ used: totals.total, cap: Number(c?.budget?.weeklyCap) > 0 ? Number(c.budget.weeklyCap) : 1_500_000, warn1: c?.budget?.warn1 ?? 0.7, warn2: c?.budget?.warn2 ?? 0.9, effortTier: c?.effort?.tier ?? 'follow-host' })
+        return { totals, demo }
+      },
+      now: () => new Date(),
+      workDir: path.join(DSH_HOME, 'koi-work'),
+      log: (m) => console.log(m),
+      hasProbabilityClaim,
+    })
+    const common = {
+      store: reviewStore, usage: usageTracker, narrator,
+      emit: (p) => bus.emit(p), now: () => new Date(), readCfg: () => cfg(),
+      log: (m) => console.log(m),
+      lock: createJobLock({ file: path.join(DATA_DIR, 'job-lock.json'), log: (m) => console.log(m) }),
+      reportsDir: path.join(DATA_DIR, 'review', 'reports'),
+      readLedger: () => readJsonOr(LEDGER_FILE, { entries: [] }),
+      readPreds: () => readJsonOr(PRED_FILE, { entries: [] }),
+    }
+    if (kind === 'weekly') {
+      const weekly = createWeeklyReview(common)
+      const r = await weekly.generateNow({})
+      if (!r.ok && r.skipped === 'duplicate') {
+        const row = reviewStore.getReport('weekly', r.period)
+        console.log(`本周期周报已存在（${r.period}，period 幂等不重发）：\n`)
+        console.log(row?.content ?? '')
+        return
+      }
+      if (!r.ok) { console.error(`✗ 周报生成失败：${r.error ?? r.skipped ?? ''}`); process.exit(1) }
+      console.log(r.content)
+      return
+    }
+    // monthly：晋升流水线逐因子评估需要回测引擎（registry 注入）
+    const drawStore = createDrawStore({ dataDir: DATA_DIR })
+    const bt = createBacktestWithBuiltins({ dataDir: DATA_DIR, drawStore, now: () => new Date(), readCfg: () => cfg(), log: () => {} })
+    const monthly = createMonthlyReview({ ...common, backtest: bt })
+    const r = await monthly.generateNow({})
+    if (!r.ok && r.skipped === 'duplicate') {
+      const row = reviewStore.getReport('monthly', r.period)
+      console.log(`本周期月报已存在（${r.period}，period 幂等不重发；流水线不在重复生成时重跑——状态变更唯一时点）：\n`)
+      console.log(row?.content ?? '')
+      return
+    }
+    if (!r.ok) { console.error(`✗ 月报生成失败：${r.error ?? r.skipped ?? ''}`); process.exit(1) }
+    console.log(r.content)
+    return
+  }
+
+  // ── M4 晋升否决（FR-035/§9-R6）：无参=列待否决清单（可发现性③）；带参+note=执行否决 ──
+  if (cmd === 'veto') {
+    const factorId = process.argv[3] && !String(process.argv[3]).startsWith('--') ? process.argv[3] : null
+    const note = arg('--note')
+    const reviewStore = createReviewStore({ dataDir: DATA_DIR })
+    const vetoHours = Number(cfg()?.review?.vetoWindowHours) > 0 ? Number(cfg().review.vetoWindowHours) : 24
+    if (!factorId) {
+      const { pending } = reviewStore.resolvePendingPromotions(new Date(), { vetoWindowHours: vetoHours })
+      if (!pending.length) { console.log('当前无待否决晋升（promoted 且未过否决窗口的因子清单为空）'); return }
+      console.log(`待否决晋升清单（否决窗口 ${vetoHours}h，过期不可回退）：`)
+      for (const p of pending) console.log(`  ${p.id}（${p.name}）· 晋升于 ${p.promotedAt} · 生效 ${p.effectiveAt} · 剩余 ${p.hoursLeft.toFixed(1)}h`)
+      console.log('\n否决：node koi.mjs veto <factorId> --note "<理由>"（BC-008 审计必填）')
+      return
+    }
+    if (!note || !String(note).trim()) { console.error('否决必须附 --note <理由>（BC-008 审计必填）'); process.exit(1) }
+    const monthly = createMonthlyReview({ store: reviewStore, readCfg: () => cfg(), log: (m) => console.log(m) })
+    const r = monthly.vetoFactor(factorId, String(note))
+    if (!r.ok) { console.error(`✗ ${r.error}`); process.exit(1) }
+    console.log(`✓ 已否决：${factorId} promoted→observing（actor=owner，审计注记已入 factor_state_log；生效门恢复为未生效）`)
+    return
   }
 
   if (cmd === 'hygiene') {

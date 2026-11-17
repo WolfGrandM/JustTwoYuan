@@ -47,6 +47,7 @@ import { createReviewStore } from './review/store.js'
 import { createNarrator } from './review/narrate.js'
 import { createWeeklyReview } from './review/weekly.js'
 import { createHealthScanner } from './review/health.js'
+import { createMonthlyReview } from './review/monthly.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
 import { loadAdapters, resolveChannelCfg, maskValue, channelsStatus } from './channels/index.js'
@@ -159,8 +160,8 @@ export function startKoiScheduler(ctx, opts) {
     log,
   })
 
-  // ── M4 复盘引擎（docs/28 §2.3①：DI 全回调注入；装配按任务进度增量——T2 装配 store/narrate/
-  //    weekly/health，monthly 于 T3 交付后并入，缺位模块相应入口跳过，T2 验收不含月报路径）──
+  // ── M4 复盘引擎（docs/28 §2.3①：DI 全回调注入；store/narrate/weekly/health 为 T2 交付面，
+  //    monthly 已随 T3 并入装配——BC-008 唯一状态变更时点，monthly.js + veto CLI 持 applyFactorTransition）──
   const reviewStore = createReviewStore({ dataDir, now: nowFn, log })
   const reviewNarrator = createNarrator({
     promptAgent: (text) => promptAgent(text, { activity: 'review' }),   // BC-013：review 活动计量
@@ -190,6 +191,12 @@ export function startKoiScheduler(ctx, opts) {
     usageWeeksOf: () => { try { return reviewWeekly.usageWeeks() } catch { return [] } },
     stateFile: path.join(dataDir, 'review', 'health-state.json'),
   })
+  // T3 并入（§2.3① 注记）：月报 + 晋升流水线（BC-008 唯一状态变更时点）
+  const reviewMonthly = createMonthlyReview({
+    store: reviewStore, backtest, readLedger, readPreds, usage, narrator: reviewNarrator,
+    emit: emitNotify, now: nowFn, readCfg: () => cfgNow(), log, lock: jobLock,
+    reportsDir: path.join(dataDir, 'review', 'reports'),
+  })
   // 复盘段入口（tick 调用；mind.enabled 双向闸——AC-008 三零断言的闸侧）
   async function reviewTickView({ today, now: nowD } = {}) {
     const cfg = cfgNow()
@@ -198,6 +205,8 @@ export function startKoiScheduler(ctx, opts) {
     const out = {}
     try { out.weekly = await reviewWeekly.maybeRunWeekly({ today: d, nowHHMM: hhmm(nowD) }) }
     catch (e) { log('[koi] 复盘段周报异常：' + String(e?.message ?? e).slice(0, 160)); out.weekly = { ok: false, error: String(e?.message ?? e).slice(0, 160) } }
+    try { out.monthly = await reviewMonthly.maybeRunMonthly({ today: d, nowHHMM: hhmm(nowD) }) }
+    catch (e) { log('[koi] 复盘段月报异常：' + String(e?.message ?? e).slice(0, 160)); out.monthly = { ok: false, error: String(e?.message ?? e).slice(0, 160) } }
     try { out.health = await reviewHealth.scanAndAlert({ today: d }) }
     catch (e) { log('[koi] 复盘段健康扫描异常：' + String(e?.message ?? e).slice(0, 160)); out.health = { ok: false, error: String(e?.message ?? e).slice(0, 160) } }
     return out
@@ -819,9 +828,10 @@ export function startKoiScheduler(ctx, opts) {
     ingest,         // 第二波：学习摄入流水线（上传/inbox/CLI 三通道；tick 只做发现与守卫内处理）
     cardsStore,     // 第二波：卡片库（cards 单写者 = 持锁串行域，W2A-23）
     backtest,       // 第二波：回测引擎（内置六件已注册；手动/链式触发）
-    review: {       // M4 复盘引擎（T2：weekly/health；monthly 于 T3 并入；store 只读面供 /api/review T6）
+    review: {       // M4 复盘引擎（T2 weekly/health + T3 monthly；store 只读面供 /api/review T6）
       store: reviewStore,
       weekly: reviewWeekly,
+      monthly: reviewMonthly,
       health: reviewHealth,
       tickView: reviewTickView,
     },

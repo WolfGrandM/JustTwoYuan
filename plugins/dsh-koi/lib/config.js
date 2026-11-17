@@ -42,6 +42,7 @@ export function buildConfigTemplate() {
     backfill: { targetIssues: null, batchSize: 100, batchGapMs: 2000, retryMax: 3, offpeakOnly: true },   // 第二波 §7（W2A-06/07）
     ingest: { maxFileMB: 20, maxCleanChars: 200000, dedup: 'merged', offpeakOnly: true },                  // 第二波 §7（W2A-22：maxCleanChars=清洗后诚实上限）
     backtest: { warmup: 30, minRounds: 100, alpha: 0.05, offpeakOnly: true },                              // 第二波 §7
+    review: { archiveAuthoritative: false, vetoWindowHours: 24, monthlyPromotionCap: 2, narrative: true }, // M4（docs/28 §2.3：加字段，schemaVersion 维持 2；archiveAuthoritative 生产切换待主人授权）
     mirror: { enabled: false, acknowledged: false },   // FR-1018 默认关闭，启用须显式知情确认
     historyCount: 30,
     historyTail: 10,
@@ -180,6 +181,12 @@ export function validateConfig(cfg) {
   if (bt.minRounds !== undefined && !(Number(bt.minRounds) > 0)) err('backtest.minRounds 必须大于 0')
   if (bt.alpha !== undefined && !(Number(bt.alpha) > 0 && Number(bt.alpha) < 1)) err('backtest.alpha 必须在 (0,1)')
   if (bt.offpeakOnly !== undefined && typeof bt.offpeakOnly !== 'boolean') err('backtest.offpeakOnly 必须是布尔')
+  // M4 增量（docs/28 §2.3：review 段——加字段通道，schemaVersion 维持 2）
+  const rv = cfg.review ?? {}
+  if (rv.archiveAuthoritative !== undefined && typeof rv.archiveAuthoritative !== 'boolean') err('review.archiveAuthoritative 必须是布尔（true 的生产切换待主人授权，docs/28 §4.2）')
+  if (rv.vetoWindowHours !== undefined && !(Number.isInteger(Number(rv.vetoWindowHours)) && Number(rv.vetoWindowHours) > 0)) err('review.vetoWindowHours 必须是 >0 的整数')
+  if (rv.monthlyPromotionCap !== undefined && !(Number.isInteger(Number(rv.monthlyPromotionCap)) && Number(rv.monthlyPromotionCap) >= 1)) err('review.monthlyPromotionCap 必须是 ≥1 的整数')
+  if (rv.narrative !== undefined && typeof rv.narrative !== 'boolean') err('review.narrative 必须是布尔')
   const mir = cfg.mirror ?? {}
   if (mir.enabled === true && mir.acknowledged !== true) err('mirror.enabled 开启必须先显式知情确认（acknowledged: true，S-122）')
   if (cfg.historyCount !== undefined && !(Number(cfg.historyCount) > 0)) err('historyCount 必须大于 0')
