@@ -38,7 +38,7 @@ export function buildConfigTemplate() {
     verbosity: 'concise',
     advisory: { enabled: true },
     pet: { enabled: true, corner: 'br', zIndex: 2147483000 },
-    petBridge: { enabled: false, baseUrl: 'http://127.0.0.1:3080/dsh-pet-7340', petId: 'main' },   // ADR-0007 §8 回退①：桥接开关默认 off（装件前 koi 零行为变化）；D 路线回环 HTTP，集成深度=仅战果播报（TF-6）
+    petBridge: { enabled: false, baseUrl: 'http://127.0.0.1:3080/dsh-pet-7340', petId: 'main', surface: 'web' },   // ADR-0007 §8 回退①：桥接开关默认 off（装件前 koi 零行为变化）；D 路线回环 HTTP，集成深度=仅战果播报（TF-6）；surface=渲染面（0.4.9 实测必填）
     donation: { enabled: true, text: '老实赚钱，很枯燥吧.jpg', link: '', image: '' },   // TF-15#4：作者捐献行（占位可配置；主人 2026-10-31 拍板文案）
     events: { retentionDays: 90, listWindow: 200 },
     backfill: { targetIssues: null, batchSize: 100, batchGapMs: 2000, retryMax: 3, offpeakOnly: true },   // 第二波 §7（W2A-06/07）
@@ -163,6 +163,7 @@ export function validateConfig(cfg) {
   if (pb.enabled !== undefined && typeof pb.enabled !== 'boolean') err('petBridge.enabled 必须是布尔')
   if (pb.baseUrl !== undefined && (typeof pb.baseUrl !== 'string' || !isLoopbackUrl(pb.baseUrl))) err('petBridge.baseUrl 必须是本机回环地址（127.0.0.1/localhost/[::1] 的 http(s)）——FZ-4 端口围栏，桥接不出回环')
   if (pb.petId !== undefined && (typeof pb.petId !== 'string' || !pb.petId.trim())) err('petBridge.petId 必须是非空字符串')
+  if (pb.surface !== undefined && !['web', 'desktop', 'both', 'any'].includes(pb.surface)) err('petBridge.surface 必须是 web/desktop/both/any 之一（dsh-pet 0.4.9 实测必填枚举）')
   const don = cfg.donation ?? {}
   if (don.enabled !== undefined && typeof don.enabled !== 'boolean') err('donation.enabled 必须是布尔')
   for (const k of ['text', 'link', 'image']) {

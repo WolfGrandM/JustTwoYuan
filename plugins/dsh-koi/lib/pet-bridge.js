@@ -6,8 +6,8 @@
  * 渲染增强，不是通知义务承担者：事件层（events.json）与渠道适配器仍是唯一事实源与送达语义承担者。
  *
  * 通路（ADR-0007 §2 决策 2）：同实例回环 HTTP——桌宠装 koi 所在实例（服务器 web profile），
- * koi 宿主进程 `POST <base>/lock?pet=` 取锁 → `POST <base>/broadcast?pet=&lock=` 投喂文本 →
- * `POST <base>/lock/release?pet=&lock=` 短窗口释放。基址 `http://127.0.0.1:<port>/dsh-pet-7340`
+ * koi 宿主进程 `POST <base>/lock?pet=&surface=`（携带空 JSON body）取锁 → `POST <base>/broadcast?pet=&surface=&lock=` 投喂文本 →
+ * `POST <base>/lock/release?pet=`（lockId 在 JSON body）短窗口释放。基址 `http://127.0.0.1:<port>/dsh-pet-7340`
  * （dsh-pet 只监听 127.0.0.1，API.md:3-8）。
  *
  * 围栏（FZ-4 语义，「端口绝不出回环」，docs/10:186）：isLoopbackUrl 仅放行 127.0.0.1/localhost/[::1]
@@ -21,15 +21,17 @@
  * 不重试、不抛错、不 emit 事件、不触碰事件状态机/补发队列/心跳判定；koi 简易气泡
  * （client.js koi-pet + panel 渠道）原样保留为未装时的降级显示（ADR-0007 §1-4）。
  *
- * 装件前诚实声明（docs/29 §3.8 记录位待填）：lockId 响应包裹层级（顶层 lockId / data.lockId）
- * 与 pet id（默认 main）按 docs/29 步骤 5 双路径兼容实查；实机联调待装件后（本轮测试全为
- * fetch 注入桩，零外联）。
+ * 装件实测回填（2026-11-18，docs/29 §3.8）：dsh-pet 0.4.9 实测 API 形态（与本地 API.md 副本有差——副本滞后于上游）
+ * ——①lock/broadcast 的 pet 与 surface 均在 query，surface 必填（枚举 web/desktop/both/any，API.md 副本未载）；
+ * ②lock 必须携带 JSON body（空 {} 即可，缺 body 回 invalid-json）；③release 的 lockId 在 JSON body（query 不认）；
+ * ④lockId 响应为顶层字段（data.lockId 两级兼容保留）。测试桩与实机同形。
  */
 
 export const PET_BRIDGE_DEFAULTS = Object.freeze({
   enabled: false,                                        // 桥接开关默认 off（ADR-0007 §8 回退①：装件前 koi 零行为变化）
   baseUrl: 'http://127.0.0.1:3080/dsh-pet-7340',         // D 路线回环基址（端口实查回填 docs/29 §3.8；装件实测 ≠3080 只改这里一处）
   petId: 'main',                                         // pet id 缺省 main（docs/29 步骤 5；实际值装件时 /config 实查）
+  surface: 'web',                                        // 渲染面（0.4.9 实测必填 query 枚举 web/desktop/both/any；服务器 headless=web）
 })
 
 /** 集成深度白名单（ADR-0007 §6：仅战果播报；扩展须主人拍板后改本常量——单点改一处） */
@@ -101,8 +103,9 @@ export function createPetBridge({ readCfg = () => ({}), log = () => {}, fetch: f
       }
       const base = String(bc.baseUrl).replace(/\/+$/, '')
       const pet = String(bc.petId || PET_BRIDGE_DEFAULTS.petId)
-      // ① 取锁（占用期桌宠全静止让路——锁纪律：取锁→投喂→释放尽量短，不注册常驻长锁，ADR-0007 §2-3）
-      const lockRes = await postJson(doFetch, q(`${base}/lock`, { pet }))
+      const surface = String(bc.surface || PET_BRIDGE_DEFAULTS.surface)
+      // ① 取锁（占用期桌宠全静止让路——锁纪律：取锁→投喂→释放尽量短，不注册常驻长锁，ADR-0007 §2-3；0.4.9 实测：surface 必填 query + 空 JSON body）
+      const lockRes = await postJson(doFetch, q(`${base}/lock`, { pet, surface }), {})
       if (!lockRes.ok) {
         log(`[koi] 桌宠桥接：取锁失败（${lockRes.detail}；dsh-pet 未装/未启用/端口不在？）——静默降级，事件层与简易气泡不受影响`)
         return { fed: false, skipped: 'lock-failed' }
@@ -113,7 +116,7 @@ export function createPetBridge({ readCfg = () => ({}), log = () => {}, fetch: f
         return { fed: false, skipped: 'no-lock-id' }
       }
       // ② 投喂战果正文（文本 = 事件 body 渲染全文，ADR-0007 §6-1「文本=事件 body 或其摘录」）
-      const bcRes = await postJson(doFetch, q(`${base}/broadcast`, { pet, lock: String(lockId) }), { text: String(ev.body ?? '') })
+      const bcRes = await postJson(doFetch, q(`${base}/broadcast`, { pet, surface, lock: String(lockId) }), { text: String(ev.body ?? '') })
       let bcFailed = null
       if (!bcRes.ok) {
         const cause = bcRes.json?.cause ? `/${bcRes.json.cause}` : ''
@@ -123,8 +126,8 @@ export function createPetBridge({ readCfg = () => ({}), log = () => {}, fetch: f
         if (bcRes.json?.error === 'lock-lost') return { fed: false, skipped: 'lock-lost' }
         bcFailed = 'broadcast-failed'
       }
-      // ③ 短窗口释放锁（尽力而为：释放失败锁按 expiresAt 自然过期，无碍）
-      const relRes = await postJson(doFetch, q(`${base}/lock/release`, { pet, lock: String(lockId) }))
+      // ③ 短窗口释放锁（尽力而为：释放失败锁按 expiresAt 自然过期，无碍；0.4.9 实测：lockId 在 JSON body，query 不认）
+      const relRes = await postJson(doFetch, q(`${base}/lock/release`, { pet }), { lockId: String(lockId) })
       if (!relRes.ok) log(`[koi] 桌宠桥接：释放锁失败（${relRes.detail}）——锁将按 expiresAt 自然过期`)
       if (bcFailed) return { fed: false, skipped: bcFailed }
       log(`[koi] 桌宠桥接：战果已投喂 dsh-pet（${ev.game ?? '?'} 第 ${ev.issue ?? '?'} 期）`)

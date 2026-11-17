@@ -84,11 +84,13 @@ test('三态②桥接投喂：lock→broadcast→release 全序 + 正文=事件 
   assert.deepEqual(r, { fed: true })
   const urls = stub.calls.map((c) => c.url)
   assert.equal(stub.calls.length, 3, '恰好三调用：取锁/投喂/释放')
-  assert.ok(urls[0].includes('/lock?pet=main'), `①取锁：${urls[0]}`)
-  assert.ok(urls[1].includes('/broadcast?pet=main&lock=L-1'), `②投喂带锁：${urls[1]}`)
-  assert.ok(urls[2].includes('/lock/release?pet=main&lock=L-1'), `③释放：${urls[2]}`)
+  assert.ok(urls[0].includes('/lock?pet=main&surface=web'), `①取锁（0.4.9 实测：pet+surface 必填 query）：${urls[0]}`)
+  assert.ok(urls[1].includes('/broadcast?pet=main&surface=web&lock=L-1'), `②投喂带锁：${urls[1]}`)
+  assert.ok(urls[2].includes('/lock/release?pet=main'), `③释放（lockId 移 body）：${urls[2]}`)
   for (const c of stub.calls) assert.equal(c.method, 'POST', '全 POST（API.md 二、三节）')
+  assert.deepEqual(JSON.parse(stub.calls[0].body), {}, 'lock 必须携带 JSON body（0.4.9 实测：缺 body 回 invalid-json）')
   assert.deepEqual(JSON.parse(stub.calls[1].body), { text: ev.body }, '文本=事件 body 渲染全文（ADR-0007 §6-1）')
+  assert.deepEqual(JSON.parse(stub.calls[2].body), { lockId: 'L-1' }, 'release 的 lockId 在 JSON body（0.4.9 实测：query 不认）')
   assert.ok(logs.some((m) => m.includes('战果已投喂 dsh-pet')), '成功记一行日志')
 })
 
@@ -98,7 +100,7 @@ test('桥接投喂·包裹层级兼容：data.lockId 两级包裹同样成链（
   const r = await bridge.onEvent(wonEvent())
   assert.equal(r.fed, true)
   assert.ok(stub.calls[1].url.includes('lock=L-2'), 'broadcast 用解出的 data.lockId')
-  assert.ok(stub.calls[2].url.includes('lock=L-2'), 'release 用同一锁')
+  assert.equal(JSON.parse(stub.calls[2].body).lockId, 'L-2', 'release 用同一锁（lockId 在 body）')
 })
 
 test('桥接投喂·锁纪律：baseUrl 尾斜杠归一 + 自定义 petId 逐段实参', async () => {
@@ -266,8 +268,8 @@ test('调度器接线·开：won=true 战果对账 → emit 后旁路投喂全�
     const e = preds.entries.find((x) => x.kind === 'daily')
     assert.equal(e.prize, 1040, '直选命中 → won=true 前置成立')
     assert.equal(pet.calls.length, 3, '桥接三调用')
-    assert.ok(pet.calls[0].url.includes('/lock?pet=main'))
-    assert.ok(pet.calls[1].url.includes('/broadcast?pet=main&lock=L-1'))
+    assert.ok(pet.calls[0].url.includes('/lock?pet=main&surface=web'))
+    assert.ok(pet.calls[1].url.includes('/broadcast?pet=main&surface=web&lock=L-1'))
     assert.ok(JSON.parse(pet.calls[1].body).text.includes('锦鲤战果'), '投喂文本=战果事件 body')
     assert.ok(pet.calls[2].url.includes('/lock/release'))
     // 事件层形状零改动（ADR-0007 §1-3：桥接不写 delivery/不改状态机）
