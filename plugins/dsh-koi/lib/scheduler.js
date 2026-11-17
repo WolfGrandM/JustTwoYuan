@@ -40,6 +40,7 @@ import { createCardsStore } from './cards.js'
 import { createBacktestWithBuiltins } from './backtest.js'
 import { createIngest } from './ingest.js'
 import { createEventBus } from './events.js'
+import { createPetBridge } from './pet-bridge.js'
 import { createAdvisory } from './advisory.js'
 import { createUsageTracker, demotionFor, leversFor, leverActive, costEstimate, estTokens } from './usage.js'
 import { hasProbabilityClaim } from './render.js'   // M4：narrate 三闸之②经注入（§2.4 禁 review→render import）
@@ -87,6 +88,7 @@ export function startKoiScheduler(ctx, opts) {
     log = () => {},
     now: nowFn = () => new Date(),          // 测试注入时钟（加法，默认真实时钟）
     fetch: fetchInj,                        // 测试注入官方抓取 { fetchHistory, fetchLatestDraw }（默认真实源）
+    petFetch,                               // 测试注入桌宠桥接 HTTP 桩（默认全局 fetch；ADR-0007 D 路线回环调用）
   } = opts
 
   const hhmm = (d = nowFn()) => hhmmOf(d)
@@ -142,6 +144,9 @@ export function startKoiScheduler(ctx, opts) {
     },
   })
   const usage = createUsageTracker({ dataDir, now: nowFn })
+  // 桌宠桥接（ADR-0007 §7：emit 后旁路钩子——不进渠道目录/不参与送达与心跳；开关默认 off，
+  // dsh-pet 未装/不可达一律静默降级走简易气泡，零报错刷屏；集成深度=仅 won=true 战果播报）
+  const petBridge = createPetBridge({ readCfg: () => cfgNow(), log, fetch: petFetch })
   // 第二波 ②学习入库半环 + ③回测引擎（docs/19 §4/§5）：
   // cards 单写者 = 持锁串行域（W2A-23）；backtest 与 backfill/ingest 共用 jobLock（W2A-20）；
   // ingest 的 LLM 调用经本调度器 promptAgent（activity=learning，BC-107 计量面）。
@@ -380,9 +385,13 @@ export function startKoiScheduler(ctx, opts) {
   }
 
   // ① emit 封装（事件层统一重试/补发；emit 返回事件快照回填 pushedAt/pushErr——MD-10）
+  // 桌宠桥接挂点（ADR-0007 §7）：emit 落库+投递完成后旁路投喂——不进渠道目录、不写 delivery、
+  // 不影响状态机/补发/心跳；onEvent 内部全兜底（永不抛/永不重试），双 try 再隔离。
   async function emitNotify(partial) {
     try {
-      return await bus.emit(partial)
+      const ev = await bus.emit(partial)
+      try { await petBridge.onEvent(ev) } catch { /* 桥接旁路：异常已内部兜底，这里再兜一层 */ }
+      return ev
     } catch (e) {
       log(`[koi] 事件层 emit 异常：${String(e?.message ?? e).slice(0, 120)}`)
       return null
@@ -861,6 +870,7 @@ export function startKoiScheduler(ctx, opts) {
       onSettled: reviewOnSettled,   // T5 观察者（archiveAuthoritative 开关控制；测试/面板可直调）
     },
     channelsOverview,
+    petBridge,        // ADR-0007 桌宠桥接（onEvent 旁路钩子；测试/面板可直调，事件层零耦合）
     status() {
       const cfg = cfgNow()
       const today = todayStr()

@@ -10,6 +10,7 @@
 import fs from 'node:fs'
 import { GAMES, GAME_ORDER } from './draws.js'
 import { TIERS, defaultTierFor } from './tiers.js'
+import { isLoopbackUrl } from './pet-bridge.js'   // FZ-4 回环判定单点（pet-bridge 不反向 import 本模块，无循环）
 
 export const SCHEMA_VERSION = 2
 
@@ -21,7 +22,7 @@ const MODES_DEFAULT = () => Object.fromEntries(GAME_ORDER.map((k) => [
 /** 首写模板（index.js 落盘用；与 docs/16 §5.3 逐字段一致；出厂默认档 = 各彩种最小档，MB-29） */
 export function buildConfigTemplate() {
   return {
-    _说明: '锦鲤市场版配置（schemaVersion 2）。channels=通知渠道（panel 为内置桌宠渠道，出厂启用；其他渠道在面板或 CLI 添加，凭证存 koi/channels/ 侧车文件）；modes=每彩种 off/manual/auto 三态（出厂 manual）；budget.weeklyCap=每周 token 预算；effort.tier=思考力度四档；verbosity=输出详略两档；改完下一轮 tick 生效（约 30 秒）。',
+    _说明: '锦鲤市场版配置（schemaVersion 2）。channels=通知渠道（panel 为内置桌宠渠道，出厂启用；其他渠道在面板或 CLI 添加，凭证存 koi/channels/ 侧车文件）；modes=每彩种 off/manual/auto 三态（出厂 manual）；budget.weeklyCap=每周 token 预算；effort.tier=思考力度四档；verbosity=输出详略两档；petBridge=桌宠桥接（默认关，开启后仅 won=true 战果投喂 dsh-pet 气泡，ADR-0007）；改完下一轮 tick 生效（约 30 秒）。',
     schemaVersion: SCHEMA_VERSION,
     channels: [{ type: 'panel', enabled: true }],
     modes: MODES_DEFAULT(),
@@ -37,6 +38,7 @@ export function buildConfigTemplate() {
     verbosity: 'concise',
     advisory: { enabled: true },
     pet: { enabled: true, corner: 'br', zIndex: 2147483000 },
+    petBridge: { enabled: false, baseUrl: 'http://127.0.0.1:3080/dsh-pet-7340', petId: 'main' },   // ADR-0007 §8 回退①：桥接开关默认 off（装件前 koi 零行为变化）；D 路线回环 HTTP，集成深度=仅战果播报（TF-6）
     donation: { enabled: true, text: '老实赚钱，很枯燥吧.jpg', link: '', image: '' },   // TF-15#4：作者捐献行（占位可配置；主人 2026-10-31 拍板文案）
     events: { retentionDays: 90, listWindow: 200 },
     backfill: { targetIssues: null, batchSize: 100, batchGapMs: 2000, retryMax: 3, offpeakOnly: true },   // 第二波 §7（W2A-06/07）
@@ -156,6 +158,11 @@ export function validateConfig(cfg) {
   if (pet.enabled !== undefined && typeof pet.enabled !== 'boolean') err('pet.enabled 必须是布尔')
   if (pet.corner !== undefined && !CORNERS.includes(pet.corner)) err(`pet.corner 必须是 ${CORNERS.join('/')}`)
   if (pet.zIndex !== undefined && !Number.isInteger(Number(pet.zIndex))) err('pet.zIndex 必须是整数')
+  // 桌宠桥接段（ADR-0007：开关默认 off；baseUrl 仅本机回环——FZ-4「端口绝不出回环」配置期拒绝，docs/10:186）
+  const pb = cfg.petBridge ?? {}
+  if (pb.enabled !== undefined && typeof pb.enabled !== 'boolean') err('petBridge.enabled 必须是布尔')
+  if (pb.baseUrl !== undefined && (typeof pb.baseUrl !== 'string' || !isLoopbackUrl(pb.baseUrl))) err('petBridge.baseUrl 必须是本机回环地址（127.0.0.1/localhost/[::1] 的 http(s)）——FZ-4 端口围栏，桥接不出回环')
+  if (pb.petId !== undefined && (typeof pb.petId !== 'string' || !pb.petId.trim())) err('petBridge.petId 必须是非空字符串')
   const don = cfg.donation ?? {}
   if (don.enabled !== undefined && typeof don.enabled !== 'boolean') err('donation.enabled 必须是布尔')
   for (const k of ['text', 'link', 'image']) {
