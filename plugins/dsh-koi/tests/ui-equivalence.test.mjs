@@ -87,6 +87,11 @@ test('等价门③：全部函数同夹具对照（每夹具两侧各调一次�
     ['uploadEstimate', [[1200, 0], [1200, 10000], [null, null], [-5, 100], [0, -3]]],
     ['backfillProgressText', [[null, 5], ['已拉至 26101', 30], ['已拉至 26101', null], ['', 10], [undefined, undefined]]],
     ['jobBadgeText', [[{ status: 'done' }], [{ status: 'pending-llm', waitingNote: '模型未就绪' }], [{}], [null], [{ status: 'mystery' }], [{ status: 'queued', waitingNote: '' }]]],
+    // M4 复盘卡片（T6）：档位边界（恰 6h → normal、<6h → red、取最小剩余窗口）、行文案与空参
+    ['promoUrgency', [[[]], [[undefined]], [[{ hoursLeft: 6 }]], [[{ hoursLeft: 5.9 }]], [[{ hoursLeft: 24 }, { hoursLeft: 3 }]], [[{ hoursLeft: 24 }]], [[{ hoursLeft: 'x' }]]]],
+    ['promoLine', [[{ id: 'f-x', name: '奇偶比', hoursLeft: 12.34, effectiveAt: 'T0' }], [{}], [null]]],
+    ['factorLine', [[{ id: 'f-y', status: 'promoted', version: 2 }], [{ id: 'f-z', status: 'observing', version: 1 }], [{}], [null]]],
+    ['healthLine', [[{ name: '满配率', ok: null, detail: 'N/A' }], [{ name: '未结清', ok: false, detail: '红：1 期' }], [{ name: '降级次数', ok: true, detail: '0 次' }], [{}], [null]]],
   ]
   // 覆盖完备性：除豁免外，权威源的每个函数导出都必须出现在对照表里（防新增函数漏夹具）
   const fnKeys = comparedKeys.filter((k) => typeof ui[k] === 'function').sort()

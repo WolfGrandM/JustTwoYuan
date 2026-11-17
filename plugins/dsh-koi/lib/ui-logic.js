@@ -167,3 +167,35 @@ export function jobBadgeText(job) {
   const base = { queued: '排队中', cleaning: '清洗中', splitting: '拆卡中', dedup: '判重中', done: '完成', 'pending-llm': '待补', rejected: '已拒收' }[job?.status] ?? String(job?.status ?? '—')
   return job?.waitingNote ? `${base} · ${job.waitingNote}` : base
 }
+
+// ── M4 复盘卡片（T6 / docs/28 §9-R6②）：待否决晋升条档位与文案（权威实现；client.js 生成块由 gen-ui-logic 同步）──
+export const PROMO_RED_HOURS = 6
+
+/** 待否决晋升条档位：hidden（无待否决）/ red（剩余 <6h 标红）/ normal（常驻条） */
+export function promoUrgency(pending, nowMs = null) {
+  void nowMs
+  const list = Array.isArray(pending) ? pending : []
+  if (!list.length) return 'hidden'
+  const minHours = Math.min(...list.map((p) => Number(p?.hoursLeft ?? Infinity)))
+  return Number.isFinite(minHours) && minHours < PROMO_RED_HOURS ? 'red' : 'normal'
+}
+
+/** 待否决条一行文案（§9-R6：剩余窗口小时数第一眼可见） */
+export function promoLine(p) {
+  return `${p?.id ?? '?'}（${p?.name ?? '?'}）· 剩余 ${Number(p?.hoursLeft ?? 0).toFixed(1)}h 否决窗口 · 生效 ${p?.effectiveAt ?? '-'}`
+}
+
+/** 因子库状态一行（DC-004 状态机面向主人的只读展示） */
+export function factorLine(f) {
+  const mark = { promoted: '↑', demoted: '↓', retired: '×', candidate: '·', observing: '·' }[f?.status] ?? '·'
+  return `${mark} ${f?.id ?? '?'}：${f?.status ?? '?'}（v${f?.version ?? 1}）`
+}
+
+/** 健康项一行（ok: true|false|null → ·/✗/—） */
+export function healthLine(i) {
+  const mark = i?.ok === false ? '✗' : i?.ok === true ? '·' : '—'
+  return `${mark} ${i?.name ?? '?'}：${i?.detail ?? ''}`
+}
+
+/** 复盘卡片诚实注脚（BC-001 输出面） */
+export const REVIEW_HONESTY_NOTE = '命中率只作与随机基线对照的观测值。周报/月报/告警经 TF-6 口径静默进面板事件列表（不推 QQ）；否决窗口过期后晋升不可回退（DC-004 单向边）。'

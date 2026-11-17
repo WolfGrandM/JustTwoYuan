@@ -169,5 +169,10 @@ export function createHealthScanner({
     }
     return { ok: true, today: d, items, alerts, firedEvents }
   }
-  return { scanAndAlert, scanHealth }
+  /** 只读扫描视图（T6 /api/review 数据源）：零事件发射、零状态落盘（GET 路由无副作用） */
+  function scan({ today } = {}) {
+    const d = today ?? now().toLocaleDateString('sv-SE')
+    return scanHealth({ readPreds, readCfg, store, today: d, signals: signalsOf() ?? {}, usageWeeks: usageWeeksOf() ?? [] })
+  }
+  return { scanAndAlert, scanHealth, scan }
 }

@@ -49,6 +49,9 @@ window.__ModuleLoader__.load({
       ".koi-hint{color:var(--dsw-alias-label-tertiary);font-size:11.5px;line-height:17px}",
       ".koi-events{max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:4px}",
       ".koi-evt{font-size:12px;line-height:18px;padding:6px 8px;border-radius:8px;background:rgba(127,127,127,.08)}",
+      // M4 复盘卡片（T6）：待否决晋升常驻条（§9-R6②，剩余 <6h 标红）
+      ".koi-promo-bar{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:8px 10px;font-size:12px;line-height:18px;background:rgba(127,127,127,.08);display:flex;flex-direction:column;gap:2px}",
+      ".koi-promo-red{border-color:var(--dsw-alias-state-error-primary,#e54d42);color:var(--dsw-alias-state-error-primary,#e54d42);background:rgba(229,77,66,.08)}",
       // 桌宠（前缀 koi-pet-；样式隔离 §2.2.3-2）
       ".koi-tabs{display:flex;gap:8px;margin:4px 0 12px;flex-wrap:wrap}",
       ".koi-donation{margin-top:14px;display:flex;flex-direction:column;gap:4px}",
@@ -375,6 +378,40 @@ window.__ModuleLoader__.load({
         h("div", { className: "koi-hint" }, "回测结论仅供你参考，不改变任何自动行为（不改档位、不进出号提示词）。"));
     }
 
+    // ── M4 复盘卡片（T6 / docs/28 §2.3 + §9-R6②）：待否决晋升常驻条 + 报告列表/全文 + 因子库 + 健康节摘要 ──
+    // 数据源 GET /dsh-koi/api/review（只读路由）；晋升叙述只读代码裁决结果（BC-001/BC-014——本卡片零 LLM 输入）
+    function ReviewArea() {
+      const [v, setV] = useState(null);
+      const [openPeriod, setOpenPeriod] = useState(null);
+      const load = useCallback(async () => {
+        try {
+          const r = await fetch(`${API}/review`, { headers: { accept: "application/json" } });
+          const j = await r.json().catch(() => ({}));
+          if (j.ok) setV(j);
+        } catch { /* 下一轮再试 */ }
+      }, []);
+      useEffect(() => { load(); }, [load]);
+      const ui = exports.__uiLogic;
+      const pending = v?.pendingPromotions?.pending ?? [];
+      const urgency = ui.promoUrgency(pending);
+      const reports = v?.reports ?? [];
+      return h("div", null,
+        urgency !== "hidden" ? h("div", { className: urgency === "red" ? "koi-promo-bar koi-promo-red" : "koi-promo-bar" },
+          `⏳ 待否决晋升 ${pending.length} 项——剩余 <6h 标红；窗口内 CLI「koi.mjs veto <因子> --note <理由>」可回退，过期不可（DC-004 单向边）：`,
+          pending.map((p, i) => h("div", { key: i }, ui.promoLine(p)))) : null,
+        h("div", { className: "koi-sec-title" }, "📋 复盘报告（周报 / 月报；全文落 review.db 与 koi/review/reports/）"),
+        reports.length ? h("div", { className: "koi-events" }, reports.map((rp) => h("div", { className: "koi-evt", key: `${rp.kind}-${rp.period}` },
+          h("div", null, `[${rp.kind === "weekly" ? "周报" : "月报"} ${rp.period}] ${String(rp.createdAt ?? "").slice(0, 19).replace("T", " ")} · `,
+            h("a", { href: "#", style: { cursor: "pointer", color: "var(--dsw-alias-brand-primary,#4a9eff)" }, onClick: (ev) => { ev.preventDefault(); setOpenPeriod(openPeriod === rp.period ? null : rp.period); } }, openPeriod === rp.period ? "收起全文" : "展开全文")),
+          openPeriod === rp.period ? h("div", { className: "koi-out" }, rp.content) : null)))
+          : h("div", { className: "koi-hint" }, "（还没有周报/月报——mind.enabled 开启后周日 22:40 / 月末 23:45 自动生成；CLI：koi.mjs report weekly|monthly）"),
+        h("div", { className: "koi-sec-title" }, "因子库状态（DC-004 状态机；状态变更唯一时点 = 月检流水线 + veto）"),
+        h("div", { className: "koi-events" }, (v?.factors ?? []).slice(0, 50).map((f, i) => h("div", { className: "koi-evt", key: f?.id ?? i }, ui.factorLine(f)))),
+        h("div", { className: "koi-sec-title" }, "健康节摘要（六项；N/A 如实标注不虚构）"),
+        h("div", { className: "koi-events" }, (v?.health?.items ?? []).map((x, i) => h("div", { className: "koi-evt", key: i }, ui.healthLine(x)))),
+        h("div", { className: "koi-hint" }, ui.REVIEW_HONESTY_NOTE));
+    }
+
     // ── 配置面板六大区（§2.2.7）────────────────────────────────────────────────
     function ConfigPanel({ st, reload }) {
       const [cfg, setCfg] = useState(null);
@@ -606,6 +643,7 @@ window.__ModuleLoader__.load({
           h("div", { className: "koi-card" }, h(DataArea, { st })),
           h("div", { className: "koi-card" }, h(LearningArea)),
           h("div", { className: "koi-card" }, h(FactorArea)),
+          h("div", { className: "koi-card" }, h(ReviewArea)),
           h("div", { className: "koi-card" }, h(ConfigPanel, { st, reload: load })),
           h("p", { className: "koi-intro" },
             "配置三入口等价：本面板 / 配置文件（路径见上） / CLI（koi.mjs config|mode|channels）；改完下一轮 tick 生效。",
@@ -756,7 +794,39 @@ window.__ModuleLoader__.load({
         return job?.waitingNote ? `${base} · ${job.waitingNote}` : base
       }
 
-      return { WIZARD_STEPS, wizardCanAdvance, wizardComplete, degradeDecision, unreadCount, winUnreadCount, verbosityChoice, bubbleTitle, LEARNING_COPY, UPLOAD_HINT, VERDICT_CALIBER, PENDING_LLM_NOTE, FULLBACKFILL_CONFIRM, SPORTTERY_DEEP_NOTE, rejectedNote, ruleDupHint, verdictTextOf, uploadFormatOk, formatBytes, uploadEstimate, backfillProgressText, jobBadgeText };
+      // ── M4 复盘卡片（T6 / docs/28 §9-R6②）：待否决晋升条档位与文案（权威实现；client.js 生成块由 gen-ui-logic 同步）──
+      const PROMO_RED_HOURS = 6
+
+      /** 待否决晋升条档位：hidden（无待否决）/ red（剩余 <6h 标红）/ normal（常驻条） */
+      function promoUrgency(pending, nowMs = null) {
+        void nowMs
+        const list = Array.isArray(pending) ? pending : []
+        if (!list.length) return 'hidden'
+        const minHours = Math.min(...list.map((p) => Number(p?.hoursLeft ?? Infinity)))
+        return Number.isFinite(minHours) && minHours < PROMO_RED_HOURS ? 'red' : 'normal'
+      }
+
+      /** 待否决条一行文案（§9-R6：剩余窗口小时数第一眼可见） */
+      function promoLine(p) {
+        return `${p?.id ?? '?'}（${p?.name ?? '?'}）· 剩余 ${Number(p?.hoursLeft ?? 0).toFixed(1)}h 否决窗口 · 生效 ${p?.effectiveAt ?? '-'}`
+      }
+
+      /** 因子库状态一行（DC-004 状态机面向主人的只读展示） */
+      function factorLine(f) {
+        const mark = { promoted: '↑', demoted: '↓', retired: '×', candidate: '·', observing: '·' }[f?.status] ?? '·'
+        return `${mark} ${f?.id ?? '?'}：${f?.status ?? '?'}（v${f?.version ?? 1}）`
+      }
+
+      /** 健康项一行（ok: true|false|null → ·/✗/—） */
+      function healthLine(i) {
+        const mark = i?.ok === false ? '✗' : i?.ok === true ? '·' : '—'
+        return `${mark} ${i?.name ?? '?'}：${i?.detail ?? ''}`
+      }
+
+      /** 复盘卡片诚实注脚（BC-001 输出面） */
+      const REVIEW_HONESTY_NOTE = '命中率只作与随机基线对照的观测值。周报/月报/告警经 TF-6 口径静默进面板事件列表（不推 QQ）；否决窗口过期后晋升不可回退（DC-004 单向边）。'
+
+      return { WIZARD_STEPS, wizardCanAdvance, wizardComplete, degradeDecision, unreadCount, winUnreadCount, verbosityChoice, bubbleTitle, LEARNING_COPY, UPLOAD_HINT, VERDICT_CALIBER, PENDING_LLM_NOTE, FULLBACKFILL_CONFIRM, SPORTTERY_DEEP_NOTE, rejectedNote, ruleDupHint, verdictTextOf, uploadFormatOk, formatBytes, uploadEstimate, backfillProgressText, jobBadgeText, PROMO_RED_HOURS, promoUrgency, promoLine, factorLine, healthLine, REVIEW_HONESTY_NOTE };
     })();
     // <<< END GENERATED
 

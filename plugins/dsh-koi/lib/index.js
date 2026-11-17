@@ -17,6 +17,7 @@
  *        POST /dsh-koi/api/backbone/full     全量回拉（confirm:true 契约；第二波 §2.5）
  *        POST /dsh-koi/api/backbone/stop     停止回拉（断点保留）
  *        GET/POST /dsh-koi/api/ingest        学习上传（raw body + ?name=）/ jobs+卡片状态（第二波 §4）
+ *        GET  /dsh-koi/api/review            M4 复盘只读面（周/月报+因子库+健康节+待否决晋升，docs/28 §2.3）
  *   4. 与鲸鱼插件同款的信任栅栏：所有路由 fail-closed（回环 + connection.requestRejection）
  *
  * 双 profile 同构（FR-1019/NFR-101）：web 与 desktop 均跑本入口（进程内 tick、数据落本地
@@ -338,6 +339,27 @@ export default {
         ok: true,
         verdicts: Object.fromEntries(GAME_ORDER.map((g) => [g, sched.backtest.verdicts(g)])),
         note: '回测结论仅供你参考，不改变任何自动行为（§5.8）',
+      })
+    })
+
+    // ── M4 复盘（T6 / docs/28 §2.3：只读路由——周/月报列表与全文 + 因子库状态 + 健康节摘要 +
+    //    待否决晋升清单 pendingPromotions（§9-R6②数据源）。既有 12 路由形状逐位不动；
+    //    经既有 route() helper 继承 fail-closed 栅栏（FZ-4 语义不变）。
+    //    health 走只读 scan（零事件发射/零状态落盘）；vetoWindowHours 与 monthly/CLI 同源 readConfig。──
+    route('exact', '/dsh-koi/api/review', async (req, res) => {
+      if (!requireMethod(req, res, 'GET')) return
+      if (!requireSched(res)) return
+      const review = sched.review
+      const cfg = readConfig(CONFIG_FILE)
+      const vetoWindowHours = Number(cfg.review?.vetoWindowHours) > 0 ? Number(cfg.review.vetoWindowHours) : 24
+      json(res, 200, {
+        ok: true,
+        reports: review.store.listReports(null, 50),
+        factors: review.store.listFactors(),
+        pendingPromotions: review.store.resolvePendingPromotions(new Date(), { vetoWindowHours }),
+        health: review.health.scan({ today: new Date().toLocaleDateString('sv-SE') }),
+        usageWeeks: review.weekly.usageWeeks(),
+        note: '复盘只读面。周报/月报/健康告警按 TF-6 口径静默进面板事件列表（不推 QQ）；报告全文同时落 review.db 与 koi/review/reports/。',
       })
     })
 
