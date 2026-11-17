@@ -10,10 +10,7 @@ import {
   TIERS, tierById, tiersForGame, defaultTierFor, v1EquivTier,
   tierStakes, specText, unitsOf, judgeTier, validateTierPicks, randomTierPicks, tierTableSelfCheck,
 } from '../lib/tiers.js'
-
-const SSQ = { issue: '2026121', date: '2026-10-22', red: [2, 7, 20, 24, 26, 30], blue: 2, prizeGrades: { 3: 3000 } }
-const DLT = { issue: '26120', date: '2026-10-21', front: [1, 6, 10, 15, 32], back: [3, 4] }
-const P3 = { issue: '26282', date: '2026-10-23', digits: [6, 4, 7] }
+import { GOLDEN_SSQ as SSQ, GOLDEN_DLT as DLT, GOLDEN_P3 as P3 } from '../lib/golden-fixtures.js'
 
 test('档表 11 档注数/价格与 §2.2.4-1 表逐档一致（含 2 元单式基础档，主人 2026-10-25 拍板）；档表自检（units×单价=价格）', () => {
   const expect = {
