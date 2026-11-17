@@ -226,6 +226,8 @@ export function createIngest({
       return { ok: false, waiting: true, note, job: waiting }
     }
     try {
+      // 域内首步：cards.json → cards.db 数据迁移（两段式第二段，docs/28 §8.5；构造期零数据写）
+      cardsStore.ensureMigrated?.()
       // 2 错峰守卫（学习不是时效性活动，等一夜无害）
       if (cfg.offpeakOnly && inOffpeakWindow(now())) {
         const note = '错峰等待中（22:30 后自动继续）'
@@ -329,11 +331,15 @@ export function createIngest({
       // 5 dedup（三态 + 开关；S-119 幂等：重跑前先回滚本 job 已写入的卡片）
       job = saveJob({ ...job, status: 'dedup', updatedAt: now().toISOString() })
       cardsStore.removeByJob(job.id)
-      const existing = cardsStore.list()
       const accepted = []
       const results = []
       for (const c of v.cards) {
-        const ruleDup = findRuleDup({ name: c.name, rule: c.rule }, [...existing, ...accepted])
+        // 判重漏斗①候选集（docs/28 §8.6）：FTS 检索供给 top-K，findRuleDup 语义不变；
+        // 迁移未完成 / FTS 不可用 → dedupCandidates 内部退化全扫（宁可少入不可漏检）。
+        const candidates = typeof cardsStore.dedupCandidates === 'function'
+          ? cardsStore.dedupCandidates(`${c.name} ${c.rule}`, { limit: 100 })
+          : cardsStore.list()
+        const ruleDup = findRuleDup({ name: c.name, rule: c.rule }, [...candidates, ...accepted])
         if (cfg.dedup === 'merged' && c.dupOf) {
           results.push({ name: c.name, verdict: `duplicate-of:${c.dupOf}`, cardId: null })
           continue

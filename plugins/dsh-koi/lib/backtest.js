@@ -117,6 +117,8 @@ export function createBacktest({
       if (!acq.ok) return { ok: false, code: 409, error: `另一后台作业进行中（${acq.held?.kind}/${acq.held?.key ?? '-'}），完成后重试` }
     }
     try {
+      // 域内首步：cards.json → cards.db 数据迁移（两段式第二段，docs/28 §8.5；构造期零数据写）
+      cardsStore?.ensureMigrated?.()
       // 全库升序切片（drawstore.getRecent 最新在前 → 反转升序；防前视由引擎切片保证）
       const desc = drawStore.getRecent(factor.game, Infinity)
       const asc = [...desc].reverse()
@@ -192,6 +194,7 @@ export function createBacktest({
       if (!acq.ok) return { ok: false, code: 409, error: `另一后台作业进行中（${acq.held?.kind}/${acq.held?.key ?? '-'}），完成后重试` }
     }
     try {
+      cardsStore?.ensureMigrated?.()   // 域内首步：cards 迁移（两段式第二段，docs/28 §8.5）
       const results = []
       const errors = []
       for (const f of registry.values()) {
@@ -226,6 +229,7 @@ export function createBacktest({
       if (!acq.ok) return { ok: false, code: 409, error: `另一后台作业进行中（${acq.held?.kind}/${acq.held?.key ?? '-'}），完成后重试` }
     }
     try {
+      cardsStore?.ensureMigrated?.()   // 域内首步：cards 迁移（两段式第二段，docs/28 §8.5）
       const results = []
       const errors = []
       for (const f of registry.values()) {
