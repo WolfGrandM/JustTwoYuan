@@ -128,7 +128,7 @@ export function createEventBus({
   /**
    * emit（§3.1 主循环）：schema 化 → render.body → 落盘 pending → 逐启用渠道 send → 状态更新。
    * partial = { kind, level?, game?, issue?, gameName?, date?, picksLine?, summary?, message?, via?,
-   *            flags?, noRetry?, fullRef?, body? }——body 显式给定时直传（TF-17 战果完整文案），
+   *            flags?, noRetry?, fullRef?, body?, won?, nearMiss? }——body 显式给定时直传（TF-17 战果完整文案），
    *            缺省仍走 renderEvent 渲染。
    * 返回落盘后的事件（快照）。
    */
@@ -153,6 +153,7 @@ export function createEventBus({
       attempts: 0,
       noRetry: partial.noRetry ?? partial.kind === 'quickpick',   // 加餐例外：一次即止（FR-005 例外原文）
       won: partial.won ?? null,   // 中奖标记（仅 result 事件携带；未读/冒泡过滤用）
+      nearMiss: partial.nearMiss ?? null,   // near-miss 标记（'NM-1'组选命中/'NM-2'两位对，仅 result 携带；ADR-0007 TF-6 白名单 v1.2 ②：桌宠气泡豁免判据；红点/未读统计口径不变仍只认 won）
       panelOnly: partial.panelOnly === true,   // M4/TF-6：review 类事件只进面板（deliver 过滤，QQ 不投）
     }
     const store = readStore()

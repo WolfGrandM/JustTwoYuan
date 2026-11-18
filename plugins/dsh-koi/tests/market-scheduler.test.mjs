@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const P3_RESULT_26283 = { issue: '26283', date: '2026-10-25', digits: [6, 4, 7], prizeGrades: { 1: 1040 } }
 
 // ── 测试台：可编程假会话（按提示词内容写交卷文件）+ 可编程抓取 + 可注入时钟 ─────────
-function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), fetch, prompt } = {}) {
+function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), fetch, prompt, picks: picksOverride = null } = {}) {
   const dir = tmpdir()
   const configPath = path.join(dir, 'koi.config.json')
   const dataDir = path.join(dir, 'koi')
@@ -46,6 +46,14 @@ function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), fetch
         const m = text.match(/predict-[\w.-]+\.json/)
         if (!m || prompt === 'silent') return
         const out = path.join(workDir, m[0])
+        if (picksOverride) {   // 测试注入固定 picks（NM 判定等需要确定性号码的场景）
+          fs.writeFileSync(out, JSON.stringify({
+            schemaVersion: 1, issue: '0', picks: picksOverride,
+            message: '本锦鲤今天研究心得：冷号在攒劲，就选这组！开奖见真章～',
+            summary: '冷号回补思路，蓝球盯小号。',
+          }))
+          return
+        }
         const reds = Number(text.match(/选 (\d+) 个红球/)?.[1] ?? 8)
         const blues = Number(text.match(/选 (\d+) 个(不同的)?蓝球/)?.[1] ?? 1)
         const fronts = Number(text.match(/选 (\d+) 个前区号/)?.[1] ?? 7)
@@ -261,6 +269,80 @@ test('AC-106 换档下期生效：当期旧档下期新档；对账按条目自�
     assert.equal(e2.tier, 'ssq-r8b1', '下期按新档')
     assert.equal(e2.cost, 56)
   } finally { h.sched.stop() }
+})
+
+// ───────────────────────────── near-miss 入档（docs/31 §4.1/§6 第一批②）─────────────────────────────
+
+const P3_NM_CFG = {
+  advisory: { enabled: false },
+  modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'auto', tier: 'p3-x1', predictAt: '17:30', gates: { honestyAck: true } } },
+}
+
+test('nearMiss 入档（FZ-3 只加字段）：NM-2 对账写入条目与 result 事件；账本口径零变化（BC-006 永不进 ledger）', async () => {
+  // picks [0,4,7] vs 开奖 [0,6,7]：两位同第三位不同 → NM-2（预注册判据 judgeNearMiss 代码产出）
+  const h = mkHarness({
+    picks: { digits: [0, 4, 7] },
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: P3_NM_CFG,
+  })
+  try {
+    await h.sched.tick()
+    await waitPreds(h, 1)
+    h.setNow(new Date('2026-10-25T22:05:00'))
+    await h.sched.tick()
+    await sleep(400)
+    const preds = readJson(path.join(h.dataDir, 'predictions.json'))
+    const e = preds.entries.find((x) => x.kind === 'daily')
+    assert.equal(e.prize, 0, '直选没奖前置成立')
+    assert.equal(e.nearMiss, 'NM-2', '对账判定结果写入条目（字段形态 = 预注册档位代号字符串）')
+    const ledger = readJson(path.join(h.dataDir, 'ledger.json'), { entries: [] })
+    const main = ledger.entries.find((x) => x.entryType === 'main')
+    assert.equal(main.prize, 0, '账本口径零变化：NM 永不进 ledger，直选没奖记 0（BC-006）')
+    assert.equal('nearMiss' in main, false, 'ledger 条目零 nearMiss 字段')
+    const evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    const result = evs.find((x) => x.kind === 'result')
+    assert.equal(result.nearMiss, 'NM-2', 'result 事件携带 nearMiss（emitNotify 实参 → 事件层透传）')
+    assert.equal(result.won, false, 'NM 未中奖：won 口径不变（红点/未读只认 won）')
+  } finally { h.sched.stop() }
+})
+
+test('nearMiss 入档·NM-1 组选命中（数字集合相同排列不同）；非 NM 轮条目零新字段（FZ-3 纯加法）', async () => {
+  // ① NM-1：picks [6,0,7] vs 开奖 [0,6,7]（docs/31 需求起源样本 607/067 形态）
+  const h1 = mkHarness({
+    picks: { digits: [6, 0, 7] },
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: P3_NM_CFG,
+  })
+  try {
+    await h1.sched.tick()
+    await waitPreds(h1, 1)
+    h1.setNow(new Date('2026-10-25T22:05:00'))
+    await h1.sched.tick()
+    await sleep(400)
+    const e1 = readJson(path.join(h1.dataDir, 'predictions.json')).entries.find((x) => x.kind === 'daily')
+    assert.equal(e1.nearMiss, 'NM-1')
+    assert.equal(e1.prize, 0)
+    const r1 = readJson(path.join(h1.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result')
+    assert.equal(r1.nearMiss, 'NM-1')
+    assert.equal(r1.won, false)
+  } finally { h1.sched.stop() }
+  // ② 非 NM 轮：picks [0,4,7] vs 开奖 [9,9,9]（零位对）—— 条目零 nearMiss 字段、事件字段 null
+  const h2 = mkHarness({
+    picks: { digits: [0, 4, 7] },
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [9, 9, 9], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: P3_NM_CFG,
+  })
+  try {
+    await h2.sched.tick()
+    await waitPreds(h2, 1)
+    h2.setNow(new Date('2026-10-25T22:05:00'))
+    await h2.sched.tick()
+    await sleep(400)
+    const e2 = readJson(path.join(h2.dataDir, 'predictions.json')).entries.find((x) => x.kind === 'daily')
+    assert.equal('nearMiss' in e2, false, '无 NM 条目零新字段（只有 NM 才写，与既有输出逐位一致）')
+    const r2 = readJson(path.join(h2.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result')
+    assert.equal(r2.nearMiss, null, '事件层字段恒在、无 NM 时为 null')
+  } finally { h2.sched.stop() }
 })
 
 // ───────────────────────────── ⑧ no-model 短路 · 门控 · status 降级 ────────────────────

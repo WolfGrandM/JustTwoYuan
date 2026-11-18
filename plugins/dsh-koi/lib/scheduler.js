@@ -28,7 +28,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { GAMES, GAME_ORDER, gamesForDate, stakesOf, validatePicks, randomPicks, picksLine,
-         nextIssue, judge, gradeSummaryText, ledgerTotals, ledgerTotalsText, appendLedgerEntry } from './draws.js'
+         nextIssue, judge, judgeNearMiss, gradeSummaryText, ledgerTotals, ledgerTotalsText, appendLedgerEntry } from './draws.js'
 import { fetchHistory, fetchLatestDraw, fetchHistoryPage } from './fetch-draws.mjs'
 import { buildPredictPrompt, fallbackMessage } from './prompt.js'
 import { readJson, writeJsonAtomic, ensureSchemaVersion } from './io.js'
@@ -451,6 +451,14 @@ export function startKoiScheduler(ctx, opts) {
       const judged = tierObj && tierObj.game === gameKey
         ? judgeTier(tierObj, entry.picks, result, result.prizeGrades ?? null)
         : judge(gameKey, entry.picks, result, result.prizeGrades ?? null)
+      // near-miss 判定（docs/31 §4.1 预注册判据，judgeNearMiss 纯函数）：只叙事与入档——
+      // 无晋升特权（主人 2026-11-18 拍板 #2 C 方案「记录它、讲述它，不奖励它」：不进任何
+      // 加权/晋升判据，BC-008 月报流水线仍是因子状态变更唯一时点），永不进 ledger
+      // （BC-006：直选没奖账本就是记 0）。归因照常：NM 样本照走归因引擎（和值/012 路判据
+      // 命中如实入档，docs/31 §2），nearMiss 字段本身不参与归因计算。
+      // 频率护栏「每彩种每日 ≤1 条」（ADR-0007 v1.2 ②）由结构保证：每彩种每日至多一条
+      // daily 条目对账 → 至多一条 result 事件携带 nearMiss（无需计数器）。
+      const nm = judgeNearMiss(gameKey, entry.picks, result)
       const wasGivenUp = entry.settleState === 'given-up'
       const ledger = readLedger()
       if (wasGivenUp) {
@@ -480,12 +488,14 @@ export function startKoiScheduler(ctx, opts) {
         message: null, summary: entry.summary ?? null, via: entry.via, fullRef: `${gameKey}|${entry.issue}`,
         flags: { fallback: entry.via === 'fallback' },
         won: judged.money > 0,   // 中奖标记（DC-102 增量）：桌宠/面板未读与冒泡只认中奖战果（主人 2026-10-25 拍板）
+        ...(nm ? { nearMiss: nm.level } : {}),   // near-miss 标记（'NM-1'/'NM-2'，仅 result 携带；ADR-0007 TF-6 白名单 v1.2 ②——红点/未读统计口径不变仍只认 won）
       })
       entry.settled = true
       entry.settleState = 'settled'
       entry.result = result
       entry.prize = judged.money
       entry.grades = judged.grades
+      if (nm) entry.nearMiss = nm.level   // FZ-3 只加字段：对账判定结果入档（predictions append-only 档案；无 NM 的条目零新字段，与既有输出逐位一致）
       entry.pushedResult = ev ? ev.status === 'sent' : false
       writeJsonAtomic(PRED_FILE, ensureSchemaVersion(preds))
       // ③ advisory 对照观测（纯观测：当期实际档 vs 建议档，BC-109）
