@@ -6,7 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   GAMES, gamesForDate, stakesOf, comb, validatePicks, randomPicks, picksLine,
-  enumerateBets, judge, gradeSummaryText, nextIssue,
+  enumerateBets, judge, judgeNearMiss, gradeSummaryText, nextIssue,
   emptyLedger, appendLedgerEntry, ledgerTotals, ledgerTotalsText,
 } from '../lib/draws.js'
 
@@ -131,6 +131,47 @@ test('奖级中文摘要', () => {
   assert.equal(gradeSummaryText('ssq', j), '三等奖×3、四等奖×15、五等奖×10')
   const j0 = judge('p3', { digits: [1, 2, 3] }, { digits: [4, 5, 6] })
   assert.equal(gradeSummaryText('p3', j0), '未中奖')
+})
+
+// ── near-miss 判定（docs/31 §4.1 预注册判据：NM-1 组选命中 / NM-2 两位对；纯函数零状态）──
+test('judgeNearMiss·NM-1 组选命中：数字全对顺序错（需求起源样本 607 vs 067）', () => {
+  const nm = judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [0, 6, 7] })
+  assert.deepEqual(nm, { level: 'NM-1', unit: [6, 0, 7], positional: 1 })
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [6, 7, 0] })?.level, 'NM-1', '任意排列不同都算 NM-1')
+})
+test('judgeNearMiss·NM-2 两位对：恰好两位同、第三位不同、非 NM-1（607 vs 609）', () => {
+  const nm = judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [6, 0, 9] })
+  assert.deepEqual(nm, { level: 'NM-2', unit: [6, 0, 7], positional: 2 })
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [6, 5, 7] })?.level, 'NM-2', '中间位不同同样 NM-2')
+})
+test('judgeNearMiss·全对直选与一位对/零位对都返回 null（不播报档）', () => {
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [6, 0, 7] }), null, '全对直选走 judge 中奖路径，不是 near-miss')
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [6, 7, 4] }), null, '一位对（docs/31 §4.1 其余行不播报）')
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [1, 2, 3] }), null, '零位对')
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [7, 7, 0] }), null, '数字集合不同且不足两位对')
+})
+test('judgeNearMiss·边界重复数字：多重集相同排列不同=NM-1，多重集不同两位同=NM-2', () => {
+  assert.equal(judgeNearMiss('p3', { digits: [1, 1, 2] }, { digits: [1, 2, 1] })?.level, 'NM-1', '重复数字组选命中（位置命中数=1 不影响 NM-1 判定）')
+  assert.equal(judgeNearMiss('p3', { digits: [1, 2, 2] }, { digits: [2, 1, 2] })?.level, 'NM-1')
+  assert.equal(judgeNearMiss('p3', { digits: [1, 1, 2] }, { digits: [1, 1, 3] })?.level, 'NM-2', '两位同第三位不同')
+  assert.equal(judgeNearMiss('p3', { digits: [1, 1, 2] }, { digits: [1, 1, 1] })?.level, 'NM-2', '开奖重号：两位同且多重集不同 → NM-2')
+  assert.equal(judgeNearMiss('p3', { digits: [1, 1, 2] }, { digits: [1, 1, 2] }), null, '全对直选（重复号）')
+})
+test('judgeNearMiss·非数字型与畸形输入返回 null（ssq/dlt 不定义不豁免；绝不抛错）', () => {
+  assert.equal(judgeNearMiss('ssq', { red: [1, 2, 3, 4, 5, 6], blue: 1 }, { red: [1, 2, 3, 4, 5, 6], blue: 2 }), null)
+  assert.equal(judgeNearMiss('dlt', { front: [1, 2, 3, 4, 5], back: [1, 2] }, { front: [1, 2, 3, 4, 5], back: [1, 2] }), null)
+  assert.equal(judgeNearMiss('p3', null, { digits: [0, 6, 7] }), null)
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0] }, { digits: [0, 6, 7] }), null, '位数不符')
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, null), null)
+  assert.equal(judgeNearMiss('p3', { digits: [6, 0, 7] }, { digits: [0, 6, 'x'] }), null, '非整数开奖位')
+})
+test('judgeNearMiss·多注档位：逐注判定取最高档首注命中（NM-1 优先于 NM-2）；直选命中注不算 near-miss', () => {
+  const multi = judgeNearMiss('p3', { digits: [[1, 2, 3], [6, 0, 7]] }, { digits: [0, 6, 7] })
+  assert.deepEqual(multi, { level: 'NM-1', unit: [6, 0, 7], positional: 1 }, '第二注组选命中')
+  const multi2 = judgeNearMiss('p3', { digits: [[1, 2, 3], [0, 4, 6]] }, { digits: [0, 4, 7] })
+  assert.deepEqual(multi2, { level: 'NM-2', unit: [0, 4, 6], positional: 2 }, '第二注两位对')
+  const mix = judgeNearMiss('p3', { digits: [[0, 6, 9], [6, 0, 7]] }, { digits: [0, 6, 7] })
+  assert.deepEqual(mix, { level: 'NM-1', unit: [6, 0, 7], positional: 1 }, 'NM-1 与 NM-2 并存取 NM-1（第二注组选命中）')
 })
 
 test('期号顺延与跨年（福彩四位年 / 体彩两位年）', () => {

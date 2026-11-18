@@ -243,6 +243,49 @@ export function judge(gameKey, picks, result, gradeMoney = null) {
   return { bets: bets.length, grades, money, floating }
 }
 
+/**
+ * near-miss 判定（docs/31 §4.1 分彩种预注册判据；ADR-0007 TF-6 豁免白名单修订 v1.2 ②）——
+ * judge 的相邻纯函数：无状态、代码产出（LLM 不可标注）、judge/enumerateBets 本体零触碰（FZ-1）。
+ *
+ * 判据（预注册，事后不可追加解释——docs/31 §4.1 原文）：
+ *   NM-1 组选命中：预测号与开奖号三位数字集合相同、排列不同（如 607 vs 067，直选没奖但组选可中）；
+ *   NM-2 两位对：恰好两个位置数字相同、第三位不同，且非 NM-1（如 607 vs 609）。
+ *   其余（全对直选 / 一位对 / 零位对）→ null：全对直选走 judge 中奖路径（won=true），
+ *   一位对/零位对照常进档案与归因统计（docs/31 §4.1「其余」行，不播报）。
+ *
+ * 生效面：仅 p3（GAMES 现仅 ssq/dlt/p3，NM 仅数字型定义；福彩 3d 随 docs/31 §6 第二批实装后加入）。
+ *   ssq/dlt 不定义、不豁免（复式口径下 near-miss 定义模糊且 ssq 六等奖本就蓝中即有，docs/31 §4.1）。
+ *
+ * 无晋升特权（主人 2026-11-18 拍板 #2 C 方案「记录它、讲述它，不奖励它」）：返回值只供
+ * 战果叙事与 predictions 档案（nearMiss 字段），不进任何加权/晋升判据（BC-008 月报流水线
+ * 仍是因子状态变更唯一时点）、永不进 ledger（BC-006 账本口径零变化——直选没奖账本就是记 0）。
+ *
+ * 多注档位（p3-x3/x5 的 digits=[[3]…]）：逐注判定，取最高档首注命中（NM-1 优先于 NM-2），
+ * unit = 命中那注的三位数（叙事引用用）。单注（digits=[3]）视为一组。
+ * 畸形输入（非数字型/缺 digits/位数不符/非整数）一律整单返回 null，绝不抛错——
+ * 对账主路径不得因叙事判定中断（settleOne 在 try 内调用本函数）。
+ * 返回：null 或 { level:'NM-1'|'NM-2', unit:[d,d,d], positional: 位置相同位数 }。
+ */
+export function judgeNearMiss(gameKey, picks, result) {
+  if (gameKey !== 'p3') return null   // NM 仅数字型生效；现仅 p3（3d 随第二批，docs/31 §6）
+  const rd = result && Array.isArray(result.digits) ? result.digits.map(Number) : null
+  if (!rd || rd.length !== 3 || !rd.every((x) => Number.isInteger(x))) return null
+  const pd = picks && Array.isArray(picks.digits) ? picks.digits : null
+  if (!pd) return null
+  const units = Array.isArray(pd[0]) ? pd : [pd]   // 多注 [[3]…] / 单注 [3]
+  let best = null
+  for (const u of units) {
+    const d = (Array.isArray(u) ? u : []).map(Number)
+    if (d.length !== 3 || !d.every((x) => Number.isInteger(x))) return null
+    const pos = d.filter((x, i) => x === rd[i]).length
+    if (pos === 3) continue                        // 全对直选：judge 已判奖，不是 near-miss
+    const sameSet = [...d].sort((a, b) => a - b).join() === [...rd].sort((a, b) => a - b).join()
+    const level = sameSet ? 'NM-1' : (pos === 2 ? 'NM-2' : null)
+    if (level && (!best || (level === 'NM-1' && best.level !== 'NM-1'))) best = { level, unit: d, positional: pos }
+  }
+  return best
+}
+
 /** 奖级一行中文（战果消息用）："三等奖×1(3000元) 六等奖×2(10元)" */
 export function gradeSummaryText(gameKey, judged) {
   const names = gameKey === 'ssq'
