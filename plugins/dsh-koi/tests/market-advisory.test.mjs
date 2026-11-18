@@ -88,6 +88,10 @@ test('② generate：文件契约交卷 + AC-111 时戳先后 + 非法档/空理
   const h3 = mkAdvisory({ writeAdvice: () => ({ schemaVersion: 1, recommendedTier: 'p3-x1', reasonFull: '该技巧能提高中奖概率' }) })
   const g3 = await h3.adv.generate('p3', '2026-10-25', h3.adv.preregister('p3', '2026-10-25', {}), {})
   assert.equal(g3.ok, false); assert.match(g3.error, /概率宣称/)
+  // 内部分组术语（P12 前置：早期未分档对用户不可见，主人 2026-11-18 拍板）
+  const h9 = mkAdvisory({ writeAdvice: () => ({ schemaVersion: 1, recommendedTier: 'p3-x1', reasonFull: '早期未分档的 24 期战绩显示了规律' }) })
+  const g9 = await h9.adv.generate('p3', '2026-10-25', h9.adv.preregister('p3', '2026-10-25', {}), {})
+  assert.equal(g9.ok, false); assert.match(g9.error, /未分档/)
   // 空理由
   const h4 = mkAdvisory({ writeAdvice: () => ({ schemaVersion: 1, recommendedTier: 'p3-x1', reasonFull: '' }) })
   const g4 = await h4.adv.generate('p3', '2026-10-25', h4.adv.preregister('p3', '2026-10-25', {}), {})

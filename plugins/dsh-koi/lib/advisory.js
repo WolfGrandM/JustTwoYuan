@@ -93,6 +93,7 @@ export function createAdvisory({ dataDir, workDir, promptAgent, now = () => new 
       '硬性规则：',
       '  · recommendedTier 必须是上面档位表里的 id，别的一个字都不认；',
       '  · reasonFull 零概率宣称：不得出现「提高/增加/提升中奖概率、胜率」类表述——开奖是独立随机事件；',
+      '  · 判据里「早期未分档」分组是内部参考数据（主人 2026-11-18 拍板：对用户不可见）：reasonFull 不得出现「未分档/未标档」等字样——要引用它的战绩就用「历史记录」泛称；',
       '  · 理由只能引用判据数据（成本权衡/历史战绩/预算余量），不得编造数据；',
       '  · 写完文件就收工：不要发任何消息、不要动这个文件之外的东西。',
     ].filter(Boolean).join('\n')
@@ -105,6 +106,7 @@ export function createAdvisory({ dataDir, workDir, promptAgent, now = () => new 
     const reasonFull = String(raw.reasonFull ?? '').trim()
     if (!reasonFull) return { ok: false, error: 'reasonFull 为空（拒用）' }
     if (hasProbabilityClaim(reasonFull)) return { ok: false, error: 'reasonFull 含概率宣称（禁用词），拒用并如实标注' }
+    if (/未分档|未标档/.test(reasonFull)) return { ok: false, error: 'reasonFull 含内部分组术语「未分档」（主人拍板对用户不可见，应称历史记录），拒用' }
     const gen = { recommendedTier: t.id, reasonFull, generatedAt: now().toISOString() }
     writeJsonAtomic(prereg.file ?? fileOf(game, date), { ...prereg, ...gen })
     return { ok: true, ...gen, file: prereg.file ?? fileOf(game, date) }
