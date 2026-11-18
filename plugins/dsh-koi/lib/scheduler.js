@@ -365,7 +365,7 @@ export function startKoiScheduler(ctx, opts) {
     return r.digits.join(' ')
   }
 
-  function settleText(gameKey, entry, result, judged, totals) {
+  function settleText(gameKey, entry, result, judged, totals, nm = null) {
     const g = GAMES[gameKey]
     const s = { spec: entry.spec ?? stakesOf(gameKey).spec, bets: entry.bets ?? stakesOf(gameKey).bets, cost: entry.cost ?? stakesOf(gameKey).cost }
     const lines = [
@@ -376,12 +376,30 @@ export function startKoiScheduler(ctx, opts) {
       `结果：${gradeSummaryText(gameKey, judged)}${judged.floating ? '（含浮动奖，金额以官方公布为准）' : ''}`,
       `本回合计：中 ${judged.money} 元`,
     ]
+    if (nm) lines.push(nmNarrativeText(nm, judged, result))   // NM 叙事段（docs/31 §4.3 占位文案）：紧跟「本回合计」、常驻诚实句前；无 NM 时零新增行（文案零变化）
     if (entry.baselinePrize != null) {
       lines.push(`同刻随机对照（纯观测）：${entry.baselineGrades && Object.keys(entry.baselineGrades).length ? gradeSummaryText(gameKey, { grades: entry.baselineGrades }) : '未中奖'} · ${entry.baselinePrize} 元`)
     }
     lines.push(ledgerTotalsText(totals))
     lines.push('开奖是随机的，图个乐～ 明天继续攒运气！')
     return lines.join('\n')
+  }
+
+  // ── near-miss 叙事段（docs/31 §4.3 占位文案原文；BC-001 诚实条款播报面三条边界）────────
+  // 可以：陈述「数字全对顺序错/两位对」的事实与账本结果 + 人设情绪；常驻诚实句（文末）保留。
+  // 禁止：近失诱导框架——「差一点就是 X 元」「好运在积累」「下次稳了/大概率」「连续接近说明快中」
+  // 等任何把 near-miss 描述为概率优势的表述（§4.3 禁止示例不上任何渠道）。
+  // 多注档位下「本注 near-miss 但其他注中奖」（judged.money>0）时，「账本记 0」子句为假 →
+  // 仅省略该子句（诚实条款优先于文案逐字），其余逐字取 §4.3 原文。
+  function nmNarrativeText(nm, judged, result) {
+    const p = nm.unit.join('')
+    const r = Array.isArray(result?.digits) ? result.digits.join('') : ''
+    if (nm.level === 'NM-1') {
+      const base = `气死气死！我们押的 ${p}，开奖 ${r}——三个数字一个不差，顺序全拧了！`
+      return judged.money > 0 ? base : `${base}直选没奖，账本老老实实记 0 元。`
+    }
+    const base = `${p} 对 ${r}，两位都对就差一位……气人！`
+    return judged.money > 0 ? `${base}锦鲤不找借口。` : `${base}不过直选就是直选，账本记 0，锦鲤不找借口。`
   }
 
   // ① emit 封装（事件层统一重试/补发；emit 返回事件快照回填 pushedAt/pushErr——MD-10）
@@ -480,7 +498,7 @@ export function startKoiScheduler(ctx, opts) {
         entry.baselinePrize = bj.money
         entry.baselineGrades = bj.grades
       }
-      const text = settleText(gameKey, entry, result, judged, totals)
+      const text = settleText(gameKey, entry, result, judged, totals, nm)
       const ev = await emitNotify({
         kind: 'result', game: gameKey, issue: entry.issue, gameName: GAMES[gameKey].name, date,
         body: text,   // TF-17：战果正文直传完整文案（开奖/我们的号/结果/中几元/对照/累计）——renderEvent 简版缺战果三要素（2026-11-18 主人实测反馈）

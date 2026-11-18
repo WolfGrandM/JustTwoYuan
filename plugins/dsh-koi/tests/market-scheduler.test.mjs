@@ -345,6 +345,109 @@ test('nearMiss 入档·NM-1 组选命中（数字集合相同排列不同）；�
   } finally { h2.sched.stop() }
 })
 
+// ───────────────────────────── settleText NM 叙事段（docs/31 §4.3 原文；第一批③）─────────────────────────────
+// QQ result 链路：正文经 TF-17 body 直传（改的是 settleText 本体）——断言读 result 事件 body。
+
+test('settleText NM 叙事·NM-1：§4.3 占位文案原文整行入正文，插在「本回合计」后、常驻诚实句前；禁止框架零命中', async () => {
+  const h = mkHarness({
+    picks: { digits: [6, 0, 7] },
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: P3_NM_CFG,
+  })
+  try {
+    await h.sched.tick()
+    await waitPreds(h, 1)
+    h.setNow(new Date('2026-10-25T22:05:00'))
+    await h.sched.tick()
+    await sleep(400)
+    const result = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result')
+    const ls = result.body.split('\n')
+    assert.equal(ls.length, 10, '经典 9 行 + NM 叙事 1 行')
+    assert.equal(ls[6], '气死气死！我们押的 607，开奖 067——三个数字一个不差，顺序全拧了！直选没奖，账本老老实实记 0 元。', '§4.3 NM-1 占位文案原文（数字代入）')
+    assert.ok(ls[5].startsWith('本回合计：'), '叙事段紧跟本回合计')
+    assert.ok(ls[7].startsWith('同刻随机对照'), '叙事段在对照行之前')
+    assert.equal(ls[9], '开奖是随机的，图个乐～ 明天继续攒运气！', '常驻诚实句仍是末行')
+    for (const banned of ['差一点就是', '好运在积累', '下次稳了', '大概率', '快中了', '快中']) {
+      assert.ok(!result.body.includes(banned), `禁止诱导框架零命中：${banned}`)
+    }
+  } finally { h.sched.stop() }
+})
+
+test('settleText NM 叙事·NM-2：两位对原文行；无 NM 轮正文与既有格式逐位一致（零变化）', async () => {
+  // ① NM-2：picks [0,4,7] vs 开奖 [0,6,7]
+  const h1 = mkHarness({
+    picks: { digits: [0, 4, 7] },
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: P3_NM_CFG,
+  })
+  try {
+    await h1.sched.tick()
+    await waitPreds(h1, 1)
+    h1.setNow(new Date('2026-10-25T22:05:00'))
+    await h1.sched.tick()
+    await sleep(400)
+    const result1 = readJson(path.join(h1.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result')
+    assert.ok(result1.body.includes('047 对 067，两位都对就差一位……气人！不过直选就是直选，账本记 0，锦鲤不找借口。'), '§4.3 NM-2 占位文案原文（数字代入）')
+    const ls1 = result1.body.split('\n')
+    assert.equal(ls1.length, 10)
+    assert.ok(ls1[6].includes('两位都对就差一位'), '叙事段仍在本回合计后')
+  } finally { h1.sched.stop() }
+  // ② 非 NM 轮：正文与既有格式逐位一致（NM 叙事段零出现——③「无 NM 时零变化」）
+  const h2 = mkHarness({
+    picks: { digits: [0, 4, 7] },
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [9, 9, 9], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: P3_NM_CFG,
+  })
+  try {
+    await h2.sched.tick()
+    await waitPreds(h2, 1)
+    h2.setNow(new Date('2026-10-25T22:05:00'))
+    await h2.sched.tick()
+    await sleep(400)
+    const result2 = readJson(path.join(h2.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result')
+    const ls2 = result2.body.split('\n')
+    assert.equal(ls2.length, 9, '无 NM：行数与既有格式一致')
+    assert.deepEqual(ls2.slice(0, 6), [
+      '🎰【锦鲤战果 · 排列三 · 第 26283 期】',
+      '开奖：9 9 9',
+      '我们的号：直选 0-4-7',
+      '（直选一注 · 1 注 / 2 元）',
+      '结果：未中奖',
+      '本回合计：中 0 元',
+    ], '前六行逐位一致（TF-17 完整文案格式不动）')
+    assert.ok(ls2[6].startsWith('同刻随机对照（纯观测）：'), '对照行（内容随基线随机号而变，仅断言前缀）')
+    assert.equal(ls2[7], '模拟账本（若每期都买）：投入 2 元 · 中 0 元 · 净 -2 元 · 共 1 期 · 还没开过胡')
+    assert.equal(ls2[8], '开奖是随机的，图个乐～ 明天继续攒运气！')
+    assert.ok(!result2.body.includes('顺序全拧') && !result2.body.includes('就差一位') && !result2.body.includes('气死'), '零 NM 叙事词')
+  } finally { h2.sched.stop() }
+})
+
+test('settleText NM 叙事·多注档位本注近失他注中奖：省略「账本记 0」子句（BC-001 诚实优先于文案逐字），账本照常记 1040', async () => {
+  const h = mkHarness({
+    picks: { digits: [[6, 0, 7], [0, 6, 7], [1, 2, 3]] },   // p3-x3：第 1 注 NM-1、第 2 注直选命中、第 3 注无关
+    fetch: { ...defaultFetch(), fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } }) },
+    cfgPatch: { ...P3_NM_CFG, modes: { ...P3_NM_CFG.modes, p3: { mode: 'auto', tier: 'p3-x3', predictAt: '17:30', gates: { honestyAck: true } } } },
+  })
+  try {
+    await h.sched.tick()
+    await waitPreds(h, 1)
+    h.setNow(new Date('2026-10-25T22:05:00'))
+    await h.sched.tick()
+    await sleep(400)
+    const preds = readJson(path.join(h.dataDir, 'predictions.json'))
+    const e = preds.entries.find((x) => x.kind === 'daily')
+    assert.equal(e.prize, 1040, '第 2 注直选命中（won=true 前置成立）')
+    assert.equal(e.nearMiss, 'NM-1', '第 1 注组选命中仍入档（记录它）')
+    const main = readJson(path.join(h.dataDir, 'ledger.json'), { entries: [] }).entries.find((x) => x.entryType === 'main')
+    assert.equal(main.prize, 1040, '账本按官方规则照常记（BC-006 口径零变化）')
+    const result = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result')
+    assert.ok(result.body.includes('气死气死！我们押的 607，开奖 067——三个数字一个不差，顺序全拧了！'), 'NM-1 事实+情绪保留')
+    assert.ok(!result.body.includes('账本老老实实记 0 元') && !result.body.includes('账本记 0'), '「账本记 0」为假 → 子句省略（诚实条款 BC-001）')
+    assert.ok(result.body.includes('本回合计：中 1040 元'))
+    assert.equal(result.won, true)
+  } finally { h.sched.stop() }
+})
+
 // ───────────────────────────── ⑧ no-model 短路 · 门控 · status 降级 ────────────────────
 
 test('⑧ classifyHostError：no-model 命中返回配置指引；未命中走 other 原语义；quickpick 短路不兜底（AC-113）', async () => {
