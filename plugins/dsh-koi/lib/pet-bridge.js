@@ -13,9 +13,15 @@
  * 围栏（FZ-4 语义，「端口绝不出回环」，docs/10:186）：isLoopbackUrl 仅放行 127.0.0.1/localhost/[::1]
  * 的 http(s) 基址；非回环基址调用期拒绝 + validateConfig 配置期拒绝（双层）。
  *
- * 触发（TF-6，唯一）：`kind==='result'` 且 `won===true`（won 标记仅 result 携带，lib/events.js:153；
- * emit 点 lib/scheduler.js 对账入账处）。其余七类事件与未中奖战果一律不投（ADR-0007 §6-3）；
- * 扩面对须主人拍板改 BRIDGE_FEED_KINDS 白名单常量，不得静默扩面（ADR-0007 §6-3 原文）。
+ * 触发（TF-6 + ADR-0007 TF-6 豁免白名单修订 v1.2 ②，主人 2026-11-18 拍板 #4，docs/31 §4.2）：
+ * `kind==='result'` 且（`won===true` 或 `nearMiss` 存在）。won 仅 result 携带（lib/events.js:156；
+ * emit 点 lib/scheduler.js 对账入账处）；nearMiss 仅 result 携带（'NM-1'组选命中/'NM-2'两位对，
+ * judgeNearMiss 预注册判据代码产出、LLM 不可标注——生效面仅 p3，3d 随 docs/31 §6 第二批）。
+ * ssq/dlt 及其余七类事件维持不上气泡（nearMiss 对非数字型恒不产出——judgeNearMiss 非 p3 返回 null，
+ * docs/31 §4.1「双色球/大乐透不定义、不豁免」）；BRIDGE_FEED_KINDS 白名单常量不动（仍仅 ['result']），
+ * 本次扩面 = won 判定处的显式豁免（ADR-0007 §TF-6 白名单 ②行，不得静默恢复、不得静默扩面；
+ * 后续扩面仍须主人拍板改 ADR-0007 该节）。
+ * 红点/未读统计口径不变：winUnreadCount 仍只认 won===true（NM 上气泡但不计未读，叙事非待办）。
  *
  * 降级（ADR-0007 §1-3）：dsh-pet 未装/未启用/端口不在/取锁失败/投喂失败——一律静默跳过并记一行日志，
  * 不重试、不抛错、不 emit 事件、不触碰事件状态机/补发队列/心跳判定；koi 简易气泡
@@ -94,7 +100,7 @@ export function createPetBridge({ readCfg = () => ({}), log = () => {}, fetch: f
     try {
       const bc = petBridgeCfg(readCfg())
       if (bc.enabled !== true) return { fed: false, skipped: 'disabled' }                       // 三态①开关关闭：零日志零 HTTP
-      if (!BRIDGE_FEED_KINDS.includes(ev?.kind) || ev?.won !== true) {                          // TF-6：唯一触发 = won===true 战果
+      if (!BRIDGE_FEED_KINDS.includes(ev?.kind) || (ev?.won !== true && ev?.nearMiss == null)) {  // TF-6 + 白名单 v1.2 ②：won 战果 或 near-miss 战果（nearMiss 仅 result 携带；红点/未读口径不变仍只认 won）
         return { fed: false, skipped: 'not-winning' }
       }
       if (!isLoopbackUrl(bc.baseUrl)) {                                                          // FZ-4：端口绝不出回环

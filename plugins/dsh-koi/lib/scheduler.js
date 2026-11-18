@@ -145,7 +145,8 @@ export function startKoiScheduler(ctx, opts) {
   })
   const usage = createUsageTracker({ dataDir, now: nowFn })
   // 桌宠桥接（ADR-0007 §7：emit 后旁路钩子——不进渠道目录/不参与送达与心跳；开关默认 off，
-  // dsh-pet 未装/不可达一律静默降级走简易气泡，零报错刷屏；集成深度=仅 won=true 战果播报）
+  // dsh-pet 未装/不可达一律静默降级走简易气泡，零报错刷屏；集成深度=won 战果播报 + near-miss 战果播报
+  // （ADR-0007 TF-6 白名单修订 v1.2 ②，主人 2026-11-18 拍板 #4：nearMiss 仅 p3 判定产出、BRIDGE_FEED_KINDS 不动）
   const petBridge = createPetBridge({ readCfg: () => cfgNow(), log, fetch: petFetch })
   // 第二波 ②学习入库半环 + ③回测引擎（docs/19 §4/§5）：
   // cards 单写者 = 持锁串行域（W2A-23）；backtest 与 backfill/ingest 共用 jobLock（W2A-20）；

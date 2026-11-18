@@ -2,7 +2,8 @@
  * F5 桌宠桥接（ADR-0007 D 路线 + §6 集成深度 + §7 TF-6 红线；docs/29 执行单）三态单测 + 调度器接线：
  *   ①开关关闭（默认 off 零 HTTP 零日志）②桥接投喂（lock→broadcast→release 全序，lockId 两级包裹兼容）
  *   ③降级（未装 404 / 不可达 ECONNREFUSED / lock-lost 按 cause 不重试抢占——全部静默零抛错）
- * TF-6：唯一触发 = kind==='result' 且 won===true，其余类别与未中奖战果零投喂；
+ * TF-6 + 白名单 v1.2 ②：触发 = kind==='result' 且（won===true 或 nearMiss 存在——near-miss 豁免
+ * 仅限 result 携带的预注册判定产出，ssq/dlt 及其余类别维持零投喂），BRIDGE_FEED_KINDS 常量不动；
  * FZ-4：非回环 baseUrl 调用期拒绝 + validateConfig 配置期拒绝（端口绝不出回环，docs/10:186）。
  * 全部 HTTP 为注入桩（fetch stub / Response 构造），零外联；实机联调待装件后（docs/29 §3.8 记录位待填）。
  */
@@ -14,6 +15,7 @@ import path from 'node:path'
 import { createPetBridge, PET_BRIDGE_DEFAULTS, BRIDGE_FEED_KINDS, isLoopbackUrl, petBridgeCfg } from '../lib/pet-bridge.js'
 import { buildConfigTemplate, buildConfigDefaults, validateConfig } from '../lib/config.js'
 import { startKoiScheduler } from '../lib/scheduler.js'
+import { winUnreadCount } from '../lib/ui-logic.js'
 import { readJson } from '../lib/io.js'
 
 const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'koi-pet-'))
@@ -175,6 +177,68 @@ test('TF-6 口径：仅 kind=result 且 won=true 上桌宠气泡；其余七类�
   assert.equal(stub.calls.length, 3)
 })
 
+// ── TF-6 豁免白名单 v1.2 ②（主人 2026-11-18 拍板 #4，docs/31 §4.2）：near-miss 战果上气泡 ──
+const nmEvent = (over = {}) => wonEvent({
+  won: false, nearMiss: 'NM-1',
+  body: '🎰【锦鲤战果 · 排列三 · 第 26283 期】\n本回合计：中 0 元\n气死气死！我们押的 607，开奖 067——三个数字一个不差，顺序全拧了！直选没奖，账本老老实实记 0 元。',
+  ...over,
+})
+
+test('白名单 v1.2 ②：won=false 未中奖战果带 nearMiss → 投喂气泡，broadcast text 含 §4.3 文案特征', async () => {
+  const stub = petStub()
+  const { bridge } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub)
+  const ev = nmEvent()
+  assert.deepEqual(await bridge.onEvent(ev), { fed: true }, 'nearMiss 存在即放行（won=false 不再一票否决）')
+  assert.equal(stub.calls.length, 3, 'lock→broadcast→release 全序不变')
+  const fedText = JSON.parse(stub.calls[1].body).text
+  assert.equal(fedText, ev.body, '文本=事件 body 渲染全文（ADR-0007 §6-1）')
+  assert.ok(fedText.includes('三个数字一个不差，顺序全拧了'), '§4.3 NM-1 特征：事实+人设情绪')
+  assert.ok(fedText.includes('账本老老实实记 0 元'), '§4.3 特征：账本如实记 0（诚实）')
+  for (const banned of ['差一点就是', '好运在积累', '下次稳了']) assert.ok(!fedText.includes(banned), `禁止诱导框架零命中：${banned}`)
+  const stub2 = petStub()
+  const { bridge: b2 } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub2)
+  const ev2 = nmEvent({ nearMiss: 'NM-2', body: '🎰【锦鲤战果 · 排列三 · 第 26283 期】\n047 对 067，两位都对就差一位……气人！不过直选就是直选，账本记 0，锦鲤不找借口。' })
+  assert.deepEqual(await b2.onEvent(ev2), { fed: true }, 'NM-2 同样放行（两档都播报，拍板 #3）')
+  assert.ok(JSON.parse(stub2.calls[1].body).text.includes('两位都对就差一位'), '§4.3 NM-2 特征')
+})
+
+test('白名单 v1.2 ②边界：非数字型未中奖与其余 kind 不豁免——nearMiss 恒不产出/kind 门不变', async () => {
+  const stub = petStub()
+  const { bridge } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub)
+  const cases = [
+    [{ kind: 'result', won: false, game: 'ssq', body: 'ssq 未中奖战果' }, 'not-winning'],   // judgeNearMiss 对 ssq 恒 null → 事件无 nearMiss（①非数字型返回 null）
+    [{ kind: 'result', won: false, game: 'dlt', body: 'dlt 未中奖战果' }, 'not-winning'],
+    [{ kind: 'result', won: null, game: 'p3', body: 'won 缺失且无 nearMiss' }, 'not-winning'],
+    [{ kind: 'predict', won: null, nearMiss: 'NM-1', body: '预测事件' }, 'not-winning'],    // kind 门不变：白名单仍仅 result
+    [{ kind: 'quickpick', won: null, nearMiss: 'NM-1', body: '加餐' }, 'not-winning'],
+  ]
+  for (const [ev, skip] of cases) assert.deepEqual(await bridge.onEvent(ev), { fed: false, skipped: skip }, ev.game ?? ev.kind)
+  assert.equal(stub.calls.length, 0, '全部零 HTTP')
+})
+
+test('白名单 v1.2 ②：ssq/dlt 维持唯一 won===true 不豁免；BRIDGE_FEED_KINDS 白名单常量不动（仍仅 result）', async () => {
+  assert.deepEqual([...BRIDGE_FEED_KINDS], ['result'], '扩面在 won 判定处（nearMiss 显式豁免），kind 白名单常量不动（ADR-0007 v1.2）')
+  const stub = petStub()
+  const { bridge } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub)
+  assert.deepEqual(await bridge.onEvent(wonEvent({ game: 'ssq', body: 'ssq 中奖战果' })), { fed: true }, 'ssq won=true 照常投喂（原路径不变）')
+  assert.equal(stub.calls.length, 3)
+  assert.deepEqual(await bridge.onEvent(wonEvent({ game: 'ssq', won: false, body: 'ssq 未中奖' })), { fed: false, skipped: 'not-winning' }, 'ssq 未中奖不上气泡')
+  assert.deepEqual(await bridge.onEvent(wonEvent({ game: 'dlt', won: false, body: 'dlt 未中奖' })), { fed: false, skipped: 'not-winning' }, 'dlt 未中奖不上气泡')
+  assert.equal(stub.calls.length, 3, '未中奖两例零新增 HTTP')
+})
+
+test('白名单 v1.2 ②联动：红点/未读口径不受影响——winUnreadCount 只认 won===true，NM 事件不计未读（叙事非待办）', () => {
+  const evs = [
+    { id: 'e1', kind: 'predict', won: null },
+    { id: 'e2', kind: 'result', won: false, nearMiss: 'NM-1', body: 'NM 叙事' },   // 上气泡但不计未读
+    { id: 'e3', kind: 'result', won: false, nearMiss: 'NM-2', body: 'NM 叙事2' },
+    { id: 'e4', kind: 'result', won: true, body: '中奖战果' },
+  ]
+  assert.equal(winUnreadCount(evs, null), 1, '只数 won===true（NM 两条均不计）')
+  assert.equal(winUnreadCount(evs, 'e2'), 1, '游标后仍只数 won===true')
+  assert.equal(winUnreadCount([{ id: 'x', kind: 'result', won: false, nearMiss: 'NM-1' }], null), 0, '纯 NM 轮红点为零')
+})
+
 // ── FZ-4 围栏（调用期 + 配置期双层）───────────────────────────────────────────────
 test('FZ-4 围栏：非回环 baseUrl 调用期拒绝（零 HTTP）+ validateConfig 配置期拒绝/放行（docs/10:186）', async () => {
   const stub = petStub()
@@ -201,7 +265,7 @@ test('FZ-4 围栏：非回环 baseUrl 调用期拒绝（零 HTTP）+ validateCon
 // ── 调度器接线（emit 后旁路钩子；ADR-0007 §7）────────────────────────────────────
 const P3_WIN_26283 = { issue: '26283', date: '2026-10-25', digits: [0, 4, 7], prizeGrades: { 1: 1040 } }
 
-function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), petFetch, latestDraw = P3_WIN_26283 } = {}) {
+function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), petFetch, latestDraw = P3_WIN_26283, picks: picksOverride = null } = {}) {
   const dir = tmpdir()
   const configPath = path.join(dir, 'koi.config.json')
   const dataDir = path.join(dir, 'koi')
@@ -217,7 +281,7 @@ function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), petFe
         if (!m) return
         fs.writeFileSync(path.join(workDir, m[0]), JSON.stringify({
           schemaVersion: 1, issue: '0',
-          picks: { digits: [0, 4, 7] },   // p3-x1 直选单式（units=1 扁平三元组）：与 P3_WIN_26283 逐位命中 → won=true
+          picks: picksOverride ?? { digits: [0, 4, 7] },   // p3-x1 直选单式（units=1 扁平三元组）：与 P3_WIN_26283 逐位命中 → won=true
           message: '本锦鲤今天研究心得：就这组！', summary: '一句话摘要。',
         }))
       },
@@ -323,4 +387,35 @@ test('调度器接线·关：默认 off 对账零桥接调用（装件前 koi �
     assert.equal(result2.won, false, '本组开奖号与预测不命中 → won=false 前置成立')
     assert.equal(petNoWin.calls.length, 0, '未中奖战果零投喂（TF-6 红线在接线面成立）')
   } finally { h2.sched.stop() }
+})
+
+test('调度器接线·白名单 v1.2 ②：NM 未中奖对账（won=false + nearMiss 存在）→ 旁路投喂，broadcast text 含 §4.3 叙事特征', async () => {
+  const pet = petStub()
+  const h = mkHarness({
+    petFetch: pet,
+    latestDraw: { issue: '26283', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } },   // vs picks [0,4,7]：两位对 → NM-2、won=false
+    cfgPatch: {
+      advisory: { enabled: false },
+      petBridge: { enabled: true, baseUrl: 'http://127.0.0.1:3080/dsh-pet-7340', petId: 'main' },
+      modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'auto', tier: 'p3-x1', predictAt: '17:30', gates: { honestyAck: true } } },
+    },
+  })
+  try {
+    await h.sched.tick()
+    await waitPreds(h, 1)
+    h.setNow(new Date('2026-10-25T22:05:00'))
+    await h.sched.tick()
+    const preds = readJson(path.join(h.dataDir, 'predictions.json'))
+    const e = preds.entries.find((x) => x.kind === 'daily')
+    assert.equal(e.nearMiss, 'NM-2', 'NM 入档前置成立（②）')
+    assert.equal(e.prize, 0, '未中奖前置成立')
+    assert.equal(pet.calls.length, 3, 'NM 未中奖战果投喂全序三调用（lock→broadcast→release）')
+    const fedText = JSON.parse(pet.calls[1].body).text
+    assert.ok(fedText.includes('两位都对就差一位'), 'broadcast text 含 §4.3 NM-2 叙事特征（事件 body 直传）')
+    assert.ok(fedText.includes('账本记 0'), '诚实口径随文案直达气泡')
+    const evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    const result = evs.find((x) => x.kind === 'result')
+    assert.equal(result.nearMiss, 'NM-2', '事件携带 nearMiss（④谓词的判据源）')
+    assert.equal(result.won, false, 'won 口径不变：NM 事件仍 won=false（红点不计）')
+  } finally { h.sched.stop() }
 })
