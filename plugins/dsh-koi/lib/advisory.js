@@ -37,7 +37,7 @@ export function createAdvisory({ dataDir, workDir, promptAgent, now = () => new 
     const byTier = {}
     for (const e of (predictions.entries ?? [])) {
       if (e.game !== game || e.kind !== 'daily') continue
-      const t = e.tier ?? '(v1 未标档)'
+      const t = e.tier ?? '早期未分档'
       const b = byTier[t] ?? (byTier[t] = { tier: t, draws: 0, invest: 0, prize: 0 })
       b.draws += 1
       b.invest += Number(e.cost ?? 0)

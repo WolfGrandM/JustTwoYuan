@@ -1,6 +1,6 @@
 /**
  * 市场版 T9 + T13(FZ-7 部分) —— advisory 单 agent 三段单测 + 角色围栏侵蚀负向用例。
- * AC-111 时戳先后；「建议不记账」与固定句；与 modes.tier 写路径物理隔离（代码结构断言，TC-112 第 2 步口径）；
+ * AC-111 时戳先后；「不计入账本统计」与固定句；与 modes.tier 写路径物理隔离（代码结构断言，TC-112 第 2 步口径）；
  * 空账本退化「样本不足」；概率宣称拒用；对照观测纯观测。
  * FZ-7 侵蚀：直改配置文件注入侵蚀性 roles.prompts → 硬校验/基线/渲染/兜底标注行为与默认完全一致。
  */
@@ -188,7 +188,7 @@ test('FZ-7 侵蚀负向（TC-112 第 2 步口径）：注入侵蚀性 roles.prom
       assert.equal(bad.ok, false)
       // ③ 渲染合规字段与默认完全一致（含诚实基调句）
       const body = renderEvent({ kind: 'quickpick', gameName: '排列三', issue: '1', picksLine: '直选 6-4-7', flags: { quickpick: true } }).body
-      assert.ok(body.includes('加餐 · 不记账') && body.includes('不改变中奖概率'))
+      assert.ok(body.includes('加餐 · 不计入账本') && body.includes('不改变中奖概率'))
       assert.equal(hasProbabilityClaim(body), false)
       // ④ configStamp 随阵容变化（可观测），行为不随提示词变化
       assert.ok(e.configStamp.startsWith(`v2:s${roles.strategists}:`))

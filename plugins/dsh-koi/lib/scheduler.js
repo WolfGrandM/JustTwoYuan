@@ -377,7 +377,7 @@ export function startKoiScheduler(ctx, opts) {
       `本回合计：中 ${judged.money} 元`,
     ]
     if (entry.baselinePrize != null) {
-      lines.push(`随机基线同刻对照：${entry.baselineGrades && Object.keys(entry.baselineGrades).length ? gradeSummaryText(gameKey, { grades: entry.baselineGrades }) : '未中奖'} · 中 ${entry.baselinePrize} 元（纯观测）`)
+      lines.push(`同刻随机对照（纯观测）：${entry.baselineGrades && Object.keys(entry.baselineGrades).length ? gradeSummaryText(gameKey, { grades: entry.baselineGrades }) : '未中奖'} · ${entry.baselinePrize} 元`)
     }
     lines.push(ledgerTotalsText(totals))
     lines.push('开奖是随机的，图个乐～ 明天继续攒运气！')
@@ -475,6 +475,7 @@ export function startKoiScheduler(ctx, opts) {
       const text = settleText(gameKey, entry, result, judged, totals)
       const ev = await emitNotify({
         kind: 'result', game: gameKey, issue: entry.issue, gameName: GAMES[gameKey].name, date,
+        body: text,   // TF-17：战果正文直传完整文案（开奖/我们的号/结果/中几元/对照/累计）——renderEvent 简版缺战果三要素（2026-11-18 主人实测反馈）
         picksLine: picksLine(gameKey, entry.picks),
         message: null, summary: entry.summary ?? null, via: entry.via, fullRef: `${gameKey}|${entry.issue}`,
         flags: { fallback: entry.via === 'fallback' },
@@ -525,7 +526,7 @@ export function startKoiScheduler(ctx, opts) {
       const s = tierStakes(gen.recommendedTier)
       await emitNotify({
         kind: 'advice', game: gameKey, issue, gameName: GAMES[gameKey].name, date,
-        message: `建议档位：${gen.recommendedTier}（${s.spec}，${s.bets} 注 / ${s.cost} 元）。理由（预注册判据）：${gen.reasonFull.slice(0, 80)}${gen.reasonFull.length > 80 ? '…' : ''}（全文见面板与档案）`,
+        message: `建议档位：${s.spec}（${s.bets} 注 / ${s.cost} 元）。理由（预注册判据）：${gen.reasonFull.slice(0, 80)}${gen.reasonFull.length > 80 ? '…' : ''}`,
         fullRef: `advisory|${gameKey}|${date}`,
       })
       log(`[koi] ${gameKey} 今日策略建议已产出：${gen.recommendedTier}（建议不记账，永不自动生效）`)

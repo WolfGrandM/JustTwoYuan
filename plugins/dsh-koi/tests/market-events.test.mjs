@@ -155,7 +155,7 @@ test('quickpick noRetry：一次即止，失败可见于面板（FR-005 加餐�
   assert.equal(ev.attempts, 1)
   await bus.pump()
   assert.equal(readJson(bus.fileOf()).entries[0].attempts, 1, 'pump 不再重试加餐')
-  assert.ok(ev.body.includes('加餐 · 不记账'), '合规字段恒拼（BC-108）')
+  assert.ok(ev.body.includes('加餐 · 不计入账本'), '合规字段恒拼（BC-108）')
 })
 
 test('心跳四断言（heartbeatJudge 纯函数，MA-19 口径）：全败→heartbeat / manual→skip / 无事件→no-events / 桌宠送达→ok', () => {

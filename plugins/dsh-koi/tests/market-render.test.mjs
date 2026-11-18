@@ -48,9 +48,9 @@ test('合规字段恒拼（BC-108）：兜底/加餐/手动/补发/基线缺失�
     const fb = renderEvent({ kind: 'predict', gameName: 'x', issue: '1', picksLine: 'x', via: 'fallback' }, { verbosity })
     assert.ok(fb.body.includes('（兜底号）'), `${verbosity} 兜底标注`)
     const qp = renderEvent({ kind: 'quickpick', gameName: 'x', issue: '1', picksLine: 'x', flags: { quickpick: true } }, { verbosity })
-    assert.ok(qp.body.includes('加餐 · 不记账'), `${verbosity} 加餐标注`)
+    assert.ok(qp.body.includes('加餐 · 不计入账本'), `${verbosity} 加餐标注`)
     const manual = renderEvent({ kind: 'quickpick', gameName: 'x', issue: '1', picksLine: 'x', flags: { manual: true } }, { verbosity })
-    assert.ok(manual.body.includes('手动推荐 · 不记账'), `${verbosity} 手动标注`)
+    assert.ok(manual.body.includes('手动推荐 · 不计入账本'), `${verbosity} 手动标注`)
     const rp = renderEvent({ kind: 'predict', gameName: 'x', issue: '1', picksLine: 'x', flags: { repush: true } }, { verbosity })
     assert.ok(rp.body.startsWith('【补发】'), `${verbosity} 补发前缀`)
     const bl = renderEvent({ kind: 'predict', gameName: 'x', issue: '1', picksLine: 'x', flags: { baselineMissing: true } }, { verbosity })
@@ -58,7 +58,7 @@ test('合规字段恒拼（BC-108）：兜底/加餐/手动/补发/基线缺失�
   }
   // 战果类基调句沿 v1「图个乐」句式
   assert.ok(honestyTail('result').includes('图个乐'))
-  assert.ok(honestyTail('advice').includes('建议不记账'))
+  assert.ok(honestyTail('advice').includes('不计入账本统计'))
 })
 
 test('禁用词表：概率宣称检测（提高/增加/提升 × 中奖概率/胜率）', () => {

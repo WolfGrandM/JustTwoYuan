@@ -182,7 +182,7 @@ test('quickpick 永久基础层：三态任一放行（off 也放行，显式行
     const qe = evs.find((x) => x.kind === 'quickpick')
     assert.ok(qe, 'quickpick 事件 noRetry')
     assert.equal(qe.noRetry, true)
-    assert.ok(qe.body.includes('加餐 · 不记账'))
+    assert.ok(qe.body.includes('加餐 · 不计入账本'))
   } finally { h.sched.stop() }
   // manual 模式 → 手动推荐留痕（MA-26）
   const h2 = mkHarness({ cfgPatch: { modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'manual', tier: 'p3-x1' } } } })
@@ -192,7 +192,7 @@ test('quickpick 永久基础层：三态任一放行（off 也放行，显式行
     const preds = await waitPreds(h2, 1)
     assert.equal(preds.entries[0].manual, true, '手动号入档留痕（继承 FR-052 加餐类别）')
     const evs = readJson(path.join(h2.dataDir, 'events.json'), { entries: [] }).entries
-    assert.ok(evs.find((x) => x.kind === 'quickpick').body.includes('手动推荐 · 不记账'))
+    assert.ok(evs.find((x) => x.kind === 'quickpick').body.includes('手动推荐 · 不计入账本'))
   } finally { h2.sched.stop() }
 })
 
@@ -381,8 +381,8 @@ test('advisory 接线（auto 出号后）：预注册→生成→advice 事件�
     const evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
     const ae = evs.find((x) => x.kind === 'advice')
     assert.ok(ae, 'advice 事件产生')
-    assert.ok(ae.body.includes('建议不记账'), '恒标注')
-    assert.ok(ae.body.includes('不会自动生效'), '固定句恒拼')
+    assert.ok(ae.body.includes('不计入账本统计'), '恒标注')
+    assert.ok(ae.body.includes('不会自动改变你的投注档位'), '固定句恒拼（TF-18 白话化）')
     // 配置隔离断言：advisory 输出永不写 modes.tier（FZ-7——modes.tier 仍是用户配置值）
     assert.equal(readJson(h.configPath).modes.p3.tier, 'p3-x1', '建议不自动改正式档位')
   } finally { h.sched.stop() }

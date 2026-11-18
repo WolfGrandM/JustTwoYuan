@@ -128,7 +128,8 @@ export function createEventBus({
   /**
    * emit（§3.1 主循环）：schema 化 → render.body → 落盘 pending → 逐启用渠道 send → 状态更新。
    * partial = { kind, level?, game?, issue?, gameName?, date?, picksLine?, summary?, message?, via?,
-   *            flags?, noRetry?, fullRef? }
+   *            flags?, noRetry?, fullRef?, body? }——body 显式给定时直传（TF-17 战果完整文案），
+   *            缺省仍走 renderEvent 渲染。
    * 返回落盘后的事件（快照）。
    */
   async function emit(partial) {
@@ -136,6 +137,7 @@ export function createEventBus({
     if (!EVENT_KINDS.includes(partial?.kind)) throw new Error(`事件 kind 非法：${partial?.kind}`)
     const verbosity = cfg?.verbosity === 'chatty' ? 'chatty' : 'concise'
     const rendered = renderEvent(partial, { verbosity })
+    const bodyFinal = typeof partial.body === 'string' && partial.body.trim() ? partial.body : rendered.body   // TF-17：显式 body 直传
     const ev = {
       id: `evt-${now().getTime()}-${Math.random().toString(36).slice(2, 8)}`,
       kind: partial.kind,
@@ -144,7 +146,7 @@ export function createEventBus({
       issue: partial.issue ?? null,
       at: isoOf(now()),
       deadline: kindDeadline(partial.kind, cfg?.time ?? {}),
-      body: rendered.body,
+      body: bodyFinal,
       fullRef: partial.fullRef ?? null,
       status: 'pending',
       delivery: [],
