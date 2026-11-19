@@ -344,3 +344,131 @@ export function profile(game, history) {
   }
   return { game, count: asc.length, cells, summary, note: DISCLAIMER }
 }
+
+// ── ③ 聚合视图生成器（docs/32 §6.2③ :67——环 A「锚 A」输入规格）────────────────────
+// LLM 吃摘要、代码吃全量（§6.1）：给环 A 的不是原始期次而是聚合产物（转移频次表/条件分位数/
+// 因子覆盖盲区清单）。本批只产聚合产物（Markdown+JSON 双形态、纯函数零 IO）；LLM 提案面
+// （月报探索性提案段）= 下一批另行拍板（§8.5 :134）。
+
+const BAND_KEYS = ['low', 'mid', 'high']
+const BAND_LABEL = { low: '低', mid: '中', high: '高' }
+const mkRow = () => ({ low: 0, mid: 0, high: 0 })
+
+/**
+ * 因子覆盖静态普查表（状态维度 → 内置因子家族；家族 id 实例化带 -<game> 后缀）。
+ * 依据 lib/factors.js 六内置（:107-187）与其文件头明示的移交盲区（:10「AC 值、斜跳号、蓝球周期」）。
+ * 静态登记不动态探测（零副作用、可复现）；新增内置因子时在此加行（纯数据）。
+ */
+const FACTOR_DIMENSIONS = [
+  { key: 'omission', label: '遗漏分布', coveredBy: ['builtin-omission', 'builtin-hot-cold'] },
+  { key: 'sum', label: '和值', coveredBy: ['builtin-sum-band'] },
+  { key: 'parity', label: '奇偶比', coveredBy: ['builtin-parity-ratio'] },
+  { key: 'road', label: '012 路', coveredBy: ['builtin-mod3-road'] },
+  { key: 'consec', label: '连号状态', coveredBy: ['builtin-consecutive'] },
+  { key: 'ac', label: 'AC 值', coveredBy: [], hint: 'lib/factors.js:10 明示移交项；本模块①指纹②档案已编码该维度，候选假设可经 docs/32 §2 预注册通道进回测观察期（样本外+Bonferroni，零特权）' },
+  { key: 'span', label: '跨度', coveredBy: [], hint: '本模块②档案已给跨度分位/极值区间；同上可预注册' },
+]
+
+/**
+ * 聚合视图（§6.2③）：Markdown + JSON 同构产物。
+ *   转移频次表 = 上一期和值档 → 下一期和值档（档界 = 本序列自身三分位数，无外来参数，确定性）；
+ *   条件分位数 = 按上一期和值档分组的下一期和值分布（count/min/p50/p90/max）；
+ *   因子覆盖盲区清单 = 内置因子未覆盖的状态维度（环 A 候选假设的目标区）。
+ * 期数不足（<3）→ 表位显式注明「不产表不虚构」；空库 → count 0 零崩溃。BC-001 注记头尾常驻。
+ */
+export function aggregate(game, history) {
+  assertGame(game)
+  const asc = ascending(history)
+  const feats = asc.map((e) => drawFeatures(game, e))
+  const sums = feats.map((f) => f.sum)
+  const latest = asc.length ? { issue: String(asc[asc.length - 1].issue), date: asc[asc.length - 1].date } : null
+
+  let transitions = null
+  let conditional = null
+  if (sums.length >= 3) {
+    const q33 = percentile(sums, 100 / 3)
+    const q66 = percentile(sums, 200 / 3)
+    const bandOf = (s) => (s <= q33 ? 'low' : s <= q66 ? 'mid' : 'high')
+    const matrix = { low: mkRow(), mid: mkRow(), high: mkRow() }
+    const cond = { low: [], mid: [], high: [] }
+    for (let i = 0; i + 1 < asc.length; i++) {
+      const from = bandOf(sums[i])
+      matrix[from][bandOf(sums[i + 1])]++
+      cond[from].push(sums[i + 1])
+    }
+    const rowPct = {}
+    for (const from of BAND_KEYS) {
+      const total = BAND_KEYS.reduce((a, k) => a + matrix[from][k], 0)
+      rowPct[from] = {}
+      for (const to of BAND_KEYS) rowPct[from][to] = total ? Math.round((matrix[from][to] / total) * 1000) / 10 : null
+    }
+    transitions = { variable: 'sum', bands: [...BAND_KEYS], cutpoints: { low: q33, mid: q66 }, pairs: asc.length - 1, matrix, rowPct }
+    const sumByPrevBand = {}
+    for (const from of BAND_KEYS) {
+      sumByPrevBand[from] = cond[from].length
+        ? { count: cond[from].length, min: percentile(cond[from], 0), p50: percentile(cond[from], 50), p90: percentile(cond[from], 90), max: percentile(cond[from], 100) }
+        : null
+    }
+    conditional = { variable: 'sumByPrevBand', bands: sumByPrevBand }
+  }
+
+  const covered = FACTOR_DIMENSIONS.filter((d) => d.coveredBy.length)
+  const uncovered = FACTOR_DIMENSIONS.filter((d) => !d.coveredBy.length)
+  const g = GAMES[game]
+  const L = []
+  L.push(`# ${g.name} 聚合视图（探索性素材 · 无预测力声明）`)
+  L.push(`> ${DISCLAIMER}`)
+  L.push(`- 在库期数：${asc.length}${latest ? `（最新 ${latest.issue} @ ${latest.date}）` : '（空库）'}`)
+  if (!transitions) {
+    L.push('## 转移频次表 / 条件分位数')
+    L.push('在库期数不足（需 ≥3 期才可按和值三分位分带）——不产表、不虚构。')
+  } else {
+    L.push(`## 转移频次表（上一期和值档 → 下一期和值档；档界=本表自身历史和值三分位：low≤${transitions.cutpoints.low}、mid≤${transitions.cutpoints.mid}）`)
+    L.push('')
+    L.push('| 上一期＼下一期 | 低(low) | 中(mid) | 高(high) | 行合计 |')
+    L.push('| --- | ---: | ---: | ---: | ---: |')
+    for (const from of BAND_KEYS) {
+      const total = BAND_KEYS.reduce((a, k) => a + transitions.matrix[from][k], 0)
+      const cells = BAND_KEYS.map((to) => `${transitions.matrix[from][to]}（${transitions.rowPct[from][to] == null ? '—' : `${transitions.rowPct[from][to]}%`}）`)
+      L.push(`| ${BAND_LABEL[from]}(${from}) | ${cells.join(' | ')} | ${total} |`)
+    }
+    L.push(`（共 ${transitions.pairs} 组相邻期转移；括号=行百分比）`)
+    L.push('')
+    L.push('## 条件分位数（下一期和值分布 | 上一期和值档）')
+    L.push('')
+    L.push('| 上一期档 | 期数 | min | p50 | p90 | max |')
+    L.push('| --- | ---: | ---: | ---: | ---: | ---: |')
+    for (const from of BAND_KEYS) {
+      const row = conditional.bands[from]
+      L.push(row
+        ? `| ${BAND_LABEL[from]}(${from}) | ${row.count} | ${row.min} | ${row.p50} | ${row.p90} | ${row.max} |`
+        : `| ${BAND_LABEL[from]}(${from}) | 0 | — | — | — | — |`)
+    }
+  }
+  L.push('')
+  L.push('## 因子覆盖盲区清单（内置因子未覆盖的状态维度——环 A 候选假设的目标区）')
+  L.push(`- 已覆盖：${covered.map((d) => `${d.label}（${d.coveredBy.join(' / ')}）`).join('；')}`)
+  L.push(`- 盲区：${uncovered.map((d) => `**${d.label}**（${d.hint}）`).join('；')}`)
+  L.push('（普查为静态登记：内置因子家族 id 前缀，实例化后缀 -<game>；新增因子加行即纯数据登记。路径已就绪：聚合视图上提假设 → factorize DSL → backtest 全量+样本外验证，零特权同流水线。）')
+  L.push('')
+  L.push(`> ${DISCLAIMER}`)
+  const markdown = L.join('\n')
+  return {
+    game,
+    count: asc.length,
+    latest,
+    markdown,
+    json: {
+      game,
+      count: asc.length,
+      latest,
+      disclaimer: DISCLAIMER,
+      transitions,
+      conditional,
+      blindSpots: {
+        covered: covered.map((d) => ({ dimension: d.key, label: d.label, coveredBy: d.coveredBy })),
+        uncovered: uncovered.map((d) => ({ dimension: d.key, label: d.label, hint: d.hint })),
+      },
+    },
+  }
+}
