@@ -26,6 +26,8 @@
  *   node koi.mjs report weekly|monthly [--no-offpeak]  手动生成复盘报告（B-21 不受 mind 闸限；BC-012 错峰守卫；计量照记）
  *   node koi.mjs veto [factorId] --note <理由>          否决窗口内晋升（无参=列待否决清单；FR-035/§9-R6）
  *   node koi.mjs migrate-archive [--dry-run] [--bakdir d] 预测档案迁移 review.db（dry-run/实跑/幂等三跑；备份硬门槛；生产实跑待主人授权）
+ *   node koi.mjs insight similarity|percentile|aggregate <game>  全量数据探索三件（docs/32 §6.2①②③；纯计算零 LLM 零 token 零落盘）
+ *          [--issue N] [--k 12] [--cell r07] [--json]    相似检索防前视只看该期之前（§6.2① 硬约束）；探索性素材、无预测力声明（BC-001）
  *   node koi.mjs hygiene [path]                        市场包卫生扫描（零命中退出 0，AC-102）
  *
  * `push --text` 已退役（通知走事件层/渠道；测试消息用 `channels test`）。
@@ -59,6 +61,7 @@ import { TIERS, tierById, judgeTier, v1EquivTier, specText } from '../lib/tiers.
 import { loadAdapters, channelsStatus, resolveChannelCfg, maskChannelCfg } from '../lib/channels/index.js'
 import { createEventBus } from '../lib/events.js'
 import { GOLDEN_SSQ, GOLDEN_DLT, GOLDEN_P3 } from '../lib/golden-fixtures.js'
+import { similar, profile, aggregate, fingerprint, cellsOf, omissionSeriesByCell, percentileRank, drawFeatures, DISCLAIMER } from '../lib/insight.js'
 import { scanPackage } from './hygiene.mjs'
 
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
@@ -719,6 +722,83 @@ async function main() {
     process.exit(1)
   }
 
+  // ── docs/32 §6.2 第一批：全量数据探索三件（数据面：纯计算零 LLM 零 token 零落盘——只读本地库；
+  //    注入面=接进 dataPack 有行为变化+每期 token 成本，§8.5 :137 单独拍板，本命令不做）。
+  //    防前视硬约束（§6.2①）：相似检索只看严格早于目标期的历史——模块构造级保证 + 测试断言锁死。──
+  if (cmd === 'insight') {
+    const sub = process.argv[3] ?? ''
+    if (!['similarity', 'percentile', 'aggregate'].includes(sub)) {
+      console.error('用法：insight similarity|percentile|aggregate <ssq|dlt|p3> [--issue N] [--k 12] [--cell r07] [--json]')
+      process.exit(1)
+    }
+    const game = process.argv[4]
+    if (!GAMES[game]) { console.error(`彩种要是 ${GAME_ORDER.join('/')} 之一`); process.exit(1) }
+    const store = createDrawStore({ dataDir: DATA_DIR })
+    const entries = store.getRecent(game, Infinity)   // 最新在前；insight 内部按期号升序整理（scheduler.js:217 同语义）
+    if (!entries.length) {
+      console.error(`${GAMES[game].name}：本地库为空（0 期）——先跑 backbone pull / backbone full 回填在库，再来 insight 查询`)
+      process.exit(1)
+    }
+    const latest = entries[0]
+    // 默认目标期=下一期（与 scheduler.js:296 同款 nextIssue 口径，跨年 26xxx→27001 由其承担）；--issue 显式指定优先。
+    // 名义期号仅作检索阈值（局势编码 = 严格早于它的全部在库期）；真实下一期号以出号管线口径为准。
+    const targetIssue = arg('--issue') != null ? String(arg('--issue')) : nextIssue(latest.issue, latest.date, new Date().toLocaleDateString('sv-SE'))
+    if (sub === 'similarity') {
+      const k = Number(arg('--k', 12))
+      const r = similar(game, entries, targetIssue, k)
+      if (hasFlag('--json')) { console.log(JSON.stringify(r, null, 2)); return }
+      console.log(`${GAMES[game].name} 相似局势检索（探索性素材 · 无预测力声明——BC-001）`)
+      console.log(`目标期 ${r.issue}${arg('--issue') == null ? '（名义下一期；局势=在库严格早于它的全部期）' : ''}${r.target ? ` · 开奖前局势基于在库 ${r.target.priorCount} 期` : ''}`)
+      if (!r.target) {
+        console.log('该期之前无历史可编码（在库不足或 --issue 过早）——命中为空，不虚构。')
+        console.log('注：' + r.note)
+        return
+      }
+      const f = r.target.fingerprint.last
+      const zoneTxt = (g, x) => g === 'ssq' ? ` / 蓝球 ${x.blue}` : g === 'dlt' ? ` / 后区和 ${x.backSum}` : ''
+      console.log(`当前局势（最近一期开奖）：和值 ${f.sum} / 奇数 ${f.odd} / 012 路 ${f.road.join('-')} / AC ${f.ac} / 连号对 ${f.consec}${zoneTxt(game, f)}`)
+      console.log(`比对 ${r.scanned} 个历史候选局势（有前期历史且早于目标期）· top-${r.hits.length} 相似期（距离升序）：`)
+      for (const h of r.hits) {
+        const nf = drawFeatures(game, h.next)
+        console.log(`  ${h.issue} @ ${h.date}  距离 ${h.distance.toFixed(4)}  后续开奖：和值 ${nf.sum} / 奇数 ${nf.odd} / 012 路 ${nf.road.join('-')} / AC ${nf.ac} / 连号对 ${nf.consec}${zoneTxt(game, nf)}`)
+        console.log(`    号码：${pickLine(game, h.next)}`)
+      }
+      console.log('注：' + r.note)
+      return
+    }
+    if (sub === 'percentile') {
+      const p = profile(game, entries)
+      if (hasFlag('--json')) { console.log(JSON.stringify(p, null, 2)); return }
+      console.log(`${GAMES[game].name} 极值/分位数档案（现算不落表 · 在库 ${p.count} 期；探索性素材 · 无预测力声明——BC-001）`)
+      const row = (label, s) => s
+        ? `  ${label}  n=${s.n}  min=${s.min}  p25=${s.p25}  p50=${s.p50}  p75=${s.p75}  p90=${s.p90}  p95=${s.p95}  p99=${s.p99}  max=${s.max}`
+        : `  ${label}  （无数据）`
+      console.log('[主区逐期分布（极值区间 = min/max）]')
+      for (const [label, s] of [['和值', p.summary.sum], ['跨度', p.summary.span], ['AC 值', p.summary.ac], ['连号对', p.summary.consec], ['奇数个数', p.summary.odd], ['最长连号', p.summary.maxRun]]) console.log(row(label, s))
+      const cellFilter = arg('--cell')
+      const cellNames = cellsOf(game).filter((c) => !cellFilter || c === cellFilter)
+      console.log(`[按 cell 遗漏分布（遗漏口径同 stats.js：0=上期刚开）]${cellFilter ? `（--cell ${cellFilter}）` : ''}`)
+      for (const c of cellNames) console.log(row(c, p.cells[c]))
+      // §6.2② 注入语义演示：当前遗漏 vs 历史分布 → 罕见性客观度量（「当前蓝球遗漏 12 期 = 历史 89 分位」）
+      const fp = fingerprint(game, entries, targetIssue)
+      if (fp) {
+        const seriesByCell = omissionSeriesByCell(game, entries)
+        const ranked = cellsOf(game)
+          .map((c) => ({ c, cur: fp.omissions[c], rank: percentileRank(seriesByCell[c], fp.omissions[c]) }))
+          .sort((a, b) => b.rank - a.rank || b.cur - a.cur)
+        console.log(`[当前局势 vs 历史分位]（截至名义期 ${targetIssue}；最罕见 8 个 cell）`)
+        for (const x of ranked.slice(0, 8)) console.log(`  ${x.c}：当前遗漏 ${x.cur} 期 = 历史 ${Number(x.rank).toFixed(1)} 分位`)
+      }
+      console.log('注：' + DISCLAIMER)
+      return
+    }
+    // aggregate：Markdown（默认）或 JSON（--json）——环 A 锚 A 输入规格（LLM 提案面另行拍板，§8.5 :134）
+    const r = aggregate(game, entries)
+    if (hasFlag('--json')) { console.log(JSON.stringify(r.json, null, 2)); return }
+    console.log(r.markdown)
+    return
+  }
+
   console.error(`不认识的命令：${cmd}（help 看用法；v1 的 push 命令已退役——测试消息用 channels test）`)
   process.exit(1)
 }
@@ -811,6 +891,14 @@ function require_tier_validate(game, tier, raw) {
   const t = tierById(tier)
   if (t && t.game === game) return validateTierPicks(t, raw)
   return validatePicks(game, raw)
+}
+
+/** insight 命令的号码呈现（pad2 口径与 lib/stats.js 一致） */
+function pickLine(game, e) {
+  const pad2 = (n) => String(n).padStart(2, '0')
+  if (game === 'ssq') return `红 ${(e.red ?? []).map(pad2).join(' ')} · 蓝 ${pad2(e.blue)}`
+  if (game === 'dlt') return `前 ${(e.front ?? []).map(pad2).join(' ')} · 后 ${(e.back ?? []).map(pad2).join(' ')}`
+  return (e.digits ?? []).join('')
 }
 
 // ── migrate-v2（S-125/MA-21/MB-24/29/35；docs/10 §6 规则3 破坏性变更通道）──────────
