@@ -256,3 +256,91 @@ export function similar(game, history, issue, k = 12) {
     note: DISCLAIMER,
   }
 }
+
+// ── ② 极值/分位数档案（docs/32 §6.2② :66——现算不落表，§8.2 L2.5「纯函数现算/实时」）──────
+
+/**
+ * 线性插值分位数（p ∈ [0,100]，与 numpy 默认 linear 法同型）。
+ * values 空数组 → null（调用方决定如何呈现）；p 越界/非有限数 → 显式报错（边界不静默）。
+ */
+export function percentile(values, p) {
+  if (!Number.isFinite(p) || p < 0 || p > 100) throw new Error(`p 要是 [0,100] 内的有限数：${p}`)
+  const s = (Array.isArray(values) ? values : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
+  if (!s.length) return null
+  const rank = (p / 100) * (s.length - 1)
+  const lo = Math.floor(rank)
+  const frac = rank - lo
+  const hi = Math.min(lo + 1, s.length - 1)
+  return s[lo] + (s[hi] - s[lo]) * frac
+}
+
+/** 历史分位：v 在 values 中的「≤ v 占比」（0–100）——「当前蓝球遗漏 12 期 = 历史 89 分位」的查询面。空数组 → null。 */
+export function percentileRank(values, v) {
+  const s = (Array.isArray(values) ? values : []).map(Number).filter(Number.isFinite)
+  if (!s.length) return null
+  const le = s.filter((x) => x <= Number(v)).length
+  return (le / s.length) * 100
+}
+
+/** 极值/分位数区间（档案表的行单位）：n + min/p25/p50/p75/p90/p95/p99/max（min/max 即极值区间）。空 → null。 */
+function statsOf(values) {
+  if (!Array.isArray(values) || !values.length) return null
+  return {
+    n: values.length,
+    min: percentile(values, 0),
+    p25: percentile(values, 25),
+    p50: percentile(values, 50),
+    p75: percentile(values, 75),
+    p90: percentile(values, 90),
+    p95: percentile(values, 95),
+    p99: percentile(values, 99),
+    max: percentile(values, 100),
+  }
+}
+
+/** 各遗漏 cell 的逐期「开奖前」遗漏序列（升序；首期无前期局势不产出）——档案与「当前=历史 X 分位」查询共用。 */
+export function omissionSeriesByCell(game, history) {
+  assertGame(game)
+  const out = {}
+  for (const cell of cellsOf(game)) out[cell] = []
+  for (const s of fingerprintSeries(game, history)) {
+    for (const cell of cellsOf(game)) out[cell].push(s.fingerprint.omissions[cell])
+  }
+  return out
+}
+
+/** 最长连号长度（与 consecCountOf 同序口径：p3 相邻位 / 其余排序后相邻；单号=1） */
+function maxRunOf(game, nums) {
+  const seq = game === 'p3' ? nums.map(Number) : [...nums].map(Number).sort((a, b) => a - b)
+  let best = 1
+  let cur = 1
+  for (let i = 0; i + 1 < seq.length; i++) {
+    if (seq[i + 1] - seq[i] === 1) { cur++; if (cur > best) best = cur } else cur = 1
+  }
+  return best
+}
+
+/**
+ * 极值/分位数档案（§6.2②）——一次现算、查询千次：
+ *   cells = 各遗漏 cell 的历史「开奖前」遗漏分布（比较基准：「当前蓝球遗漏 12 期 = 历史 89 分位」）；
+ *   summary = 和值/跨度/AC/连号对数/奇数个数/最长连号的逐期分布（极值区间 min/max 含于表内）。
+ * 全部现算不落表（本批零新表）：7000 期 p3 = 7000×30 cell 更新 + 30 列排序，毫秒级。
+ * 逐期分布用各期自身开奖（历史分布描述，非时点状态查询——时点比较用 cells + percentileRank）。
+ */
+export function profile(game, history) {
+  assertGame(game)
+  const asc = ascending(history)
+  const seriesByCell = omissionSeriesByCell(game, asc)
+  const cells = {}
+  for (const cell of cellsOf(game)) cells[cell] = statsOf(seriesByCell[cell])
+  const feats = asc.map((e) => drawFeatures(game, e))
+  const summary = {
+    sum: statsOf(feats.map((f) => f.sum)),
+    span: statsOf(asc.map((e) => { const nums = mainNums(game, e); return Math.max(...nums, Number.NEGATIVE_INFINITY) - Math.min(...nums, Number.POSITIVE_INFINITY) })),
+    ac: statsOf(feats.map((f) => f.ac)),
+    consec: statsOf(feats.map((f) => f.consec)),
+    odd: statsOf(feats.map((f) => f.odd)),
+    maxRun: statsOf(asc.map((e) => maxRunOf(game, mainNums(game, e)))),
+  }
+  return { game, count: asc.length, cells, summary, note: DISCLAIMER }
+}
