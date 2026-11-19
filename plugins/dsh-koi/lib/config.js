@@ -46,7 +46,7 @@ export function buildConfigTemplate() {
     backtest: { warmup: 30, minRounds: 100, alpha: 0.05, offpeakOnly: true },                              // 第二波 §7
     review: { archiveAuthoritative: false, vetoWindowHours: 24, monthlyPromotionCap: 2, narrative: true }, // M4（docs/28 §2.3：加字段，schemaVersion 维持 2；archiveAuthoritative 生产切换待主人授权）
     mirror: { enabled: false, acknowledged: false },   // FR-1018 默认关闭，启用须显式知情确认
-    historyCount: 30,
+    historyCount: 100,   // B 项（主人 2026-11-19 拍板）：出号分析窗口 30→100 期——prompt 增量约 1.5-2K token/次（三彩种日合计约 1 万，占周预算 0.7%），统计叙事样本 ×3.3；流水展示段保持 historyTail: 10（展示层不动）。全量回拉完成后生效
     historyTail: 10,
     persona: '',
     holidays: [],

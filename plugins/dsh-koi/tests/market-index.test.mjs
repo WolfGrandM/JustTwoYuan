@@ -23,12 +23,12 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koi-idx-'))
 const configPath = path.join(dir, 'koi.config.json')
 const dataDir = path.join(dir, 'koi')
 fs.mkdirSync(path.join(dataDir, 'draws'), { recursive: true })
-// 本地库预置 30 期新鲜数据（backbone POST 走本地零网络路径）
+// 本地库预置 100 期新鲜数据（backbone POST 走本地零网络路径；B 项 historyCount 30→100 后夹具同步——「本地已足」判定=在库≥historyCount）
 // ⚠ 日期必须相对当天生成（TF-14）：硬编码日期会在 7 天后被 isStaleDraw 判过期，
 //   ensureRecent 转走真实网络路径 → fetched≠0 → 断言失败（2026-10-29 时间炸弹实录）
 const dayStr = (offset) => new Date(Date.now() - offset * 86_400_000).toLocaleDateString('sv-SE')
 for (const g of ['ssq', 'dlt', 'p3']) {
-  const entries = Array.from({ length: 30 }, (_, i) => g === 'ssq'
+  const entries = Array.from({ length: 100 }, (_, i) => g === 'ssq'
     ? { issue: String(2026121 - i), date: dayStr(i), red: [2, 7, 20, 24, 26, 30], blue: 2 }
     : g === 'dlt'
       ? { issue: String(26120 - i), date: dayStr(i), front: [1, 6, 10, 15, 32], back: [3, 4] }
@@ -160,7 +160,7 @@ test('backbone：GET 状态透出；POST 近期窗口按需拉取（本地已足
   writeCfg(freshConfig())
   const g = await call('/dsh-koi/api/backbone').promise
   assert.equal(g.code, 200)
-  assert.equal(g.json.backbone.p3.count, 30)
+  assert.equal(g.json.backbone.p3.count, 100)   // B 项：historyCount 30→100，夹具同步 100 期
   const p = await call('/dsh-koi/api/backbone', { method: 'POST' }).promise
   assert.equal(p.code, 200)
   assert.equal(p.json.ok, true)
