@@ -171,11 +171,11 @@ test('backbone：GET 状态透出；POST 近期窗口按需拉取（本地已足
   assert.equal(routes.has('/dsh-koi/api/ingest'), true, '第二波：/api/ingest 存在（上传 raw body + ?name=）')
 })
 
-test('ingest 路由：415 格式拒收（?name=PDF）/ GET jobs+cards 状态面 / 非回环 403 / 405 语义', async () => {
+test('ingest 路由：415 格式拒收（?name=白名单外 ext）/ GET jobs+cards 状态面 / 非回环 403 / 405 语义', async () => {
   writeCfg(freshConfig())
-  const bad = await call('/dsh-koi/api/ingest', { method: 'POST', body: '%PDF-1.4', search: '?name=book.pdf' }).promise
+  const bad = await call('/dsh-koi/api/ingest', { method: 'POST', body: 'word 二进制', search: '?name=book.doc' }).promise
   assert.equal(bad.code, 415)
-  assert.ok(bad.json.error.includes('支持 .txt / .md') && bad.json.error.includes('暂不支持直接解析'))
+  assert.ok(bad.json.error.includes('支持 .txt / .md / .epub / .pdf') && bad.json.error.includes('请先转文字版'), '收尾批 T3：EPUB/PDF 解禁后拒收文案同步')
   const g = await call('/dsh-koi/api/ingest').promise
   assert.equal(g.code, 200)
   assert.equal(g.json.ok, true)

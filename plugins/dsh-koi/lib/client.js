@@ -731,8 +731,8 @@ window.__ModuleLoader__.load({
       /** 上传页文案（§6 定稿原文；MA-25 正向断言口径） */
       const LEARNING_COPY = '📚 学习 = 严格回测检验：上传的技巧会先清洗拆成卡片，再用你的本地全量历史逐一回测。结论可能证明技巧无效——多数技巧的结论会是「与随机无异」，这会如实记录、不会美化。学习影响的是「我们知道的多少」，不改变中奖概率。'
 
-      /** 上传控件旁提示（§6 定稿原文；FR-1013 收窄口径 W2A-04） */
-      const UPLOAD_HINT = '支持 .txt / .md（≤20MB）；PDF/EPUB 请先转为文本（暂不支持直接解析）。'
+      /** 上传控件旁提示（收尾批 T3 更新：EPUB/PDF 解禁——P3 拍板优先级，提取仅支持文本型） */
+      const UPLOAD_HINT = '支持 .txt / .md / .epub / .pdf（≤20MB）；EPUB/PDF 提取仅支持文本型——图片版/加密/压缩流复杂的 PDF 拒收（请转文字版）。'
 
       /** 结论页口径行（§6 定稿原文；每条结论恒拼） */
       const VERDICT_CALIBER = '口径：本地全量历史 N 期滚动回测 · 命中判据回测前预注册 · 基线=判据滞后自评满足率 · 单侧精确二项检验（α=0.05）。「与随机无异」= 命中率与随机基线无统计学差异。开奖是独立随机事件，回测结论不改变中奖概率，也不驱动任何自动行为。'
@@ -761,9 +761,9 @@ window.__ModuleLoader__.load({
         return verdict === 'better-in-sample' ? '样本内优于随机' : '与随机无异'
       }
 
-      /** 上传格式校验（.txt/.md 白名单；S-118） */
+      /** 上传格式校验（.txt/.md/.epub/.pdf 白名单；S-118 + 收尾批 T3 解禁） */
       function uploadFormatOk(name) {
-        const m = String(name ?? '').toLowerCase().match(/\.(txt|md)$/)
+        const m = String(name ?? '').toLowerCase().match(/\.(txt|md|epub|pdf)$/)
         return m ? { ok: true, ext: m[1] } : { ok: false, ext: null, error: UPLOAD_HINT }
       }
 

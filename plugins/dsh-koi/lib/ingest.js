@@ -6,9 +6,11 @@
  *
  * 流水线（processJob，§4.4）：
  *   0 作业互斥（W2A-20 job-lock，backfill/ingest/backtest 三者互斥；被占 → queued 等待）
- *   1 守卫：格式白名单 .txt/.md（PDF/EPUB 明示暂不支持，S-118）/ ≤20MB
+ *   1 守卫：格式白名单 .txt/.md/.epub/.pdf（收尾批 T3 解禁 EPUB/PDF——零依赖提取 lib/extract.js，
+ *     P3 拍板优先级：EPUB=zip+XHTML 内置解析；PDF=尽力提取文本型，图片版/加密/压缩流明确拒收）/ ≤20MB
  *   2 错峰守卫（BC-012）：17:00–22:30 → queued「错峰等待中」
- *   3 cleaning：cleanText（§4.3）→ 清洗文本落盘；清洗后为空 rejected；> maxCleanChars rejected（分卷提示）；
+ *   3 cleaning：.epub/.pdf 先按魔数自动识别提取文本（extractIfNeeded，提取失败=明确拒收文案）→
+ *     cleanText（§4.3）→ 清洗文本落盘；清洗后为空 rejected；> maxCleanChars rejected（分卷提示）；
  *     预算预检（W2A-22：估算超本周剩余 → rejected，防单文件把整周学习锁死在 pauseLearning）
  *   4 splitting：走既有会话 promptAgent（FR-1022/S-117，与 advisory 同款注入先例）；
  *     文件契约交卷 → schema 校验 → 一次打回 → 仍不过 → pending-llm（S-119）；
@@ -25,10 +27,11 @@ import { findRuleDup, nameKey } from './cards.js'
 import { estTokens } from './usage.js'
 import { factorizeCard } from './factorize.js'
 import { inOffpeakWindow } from './backfill.js'
+import { extractIfNeeded } from './extract.js'          // 收尾批 T3：EPUB/PDF 零依赖提取（P3 拍板优先级）
 import { randSuffix, waitJsonFile } from './fspoll.js'   // T-06：轮询微工具单点（无取消语义，stopCheck 走默认 false）
 
-const EXT_OK = ['.txt', '.md']
-const FORMAT_REJECT = '支持 .txt / .md（≤20MB）；PDF/EPUB 请先转为文本（暂不支持直接解析，已在待办）'
+const EXT_OK = ['.txt', '.md', '.epub', '.pdf']
+const FORMAT_REJECT = '支持 .txt / .md / .epub / .pdf（≤20MB）；.doc/.wps 等其他格式请先转文字版（EPUB/PDF 提取仅支持文本型——图片版/加密/压缩流复杂的拒收）'
 const SPLIT_WAIT_MS = 10 * 60_000
 const SPLIT_POLL_MS = 3_000
 const JOBS_KEEP_DONE = 50
@@ -239,10 +242,14 @@ export function createIngest({
       if (!EXT_OK.includes(`.${job.ext}`)) return { ok: true, job: rejectJob(job, FORMAT_REJECT) }
       if (Number(job.size) > cfg.maxFileBytes) return { ok: true, job: rejectJob(job, `文件超过 ${Math.round(cfg.maxFileBytes / 1024 / 1024)}MB 上限`) }
 
-      // 3 cleaning
+      // 3 cleaning（.epub/.pdf 先零依赖提取文本（收尾批 T3，魔数自动识别优先于扩展名），再进既有清洗管线）
       job = saveJob({ ...job, status: 'cleaning', waitingNote: null, updatedAt: now().toISOString() })
       try { lock?.heartbeat?.() } catch {}
-      const raw = fs.readFileSync(path.join(FILES_DIR, `${job.id}.${job.ext}`), 'utf8')
+      const rawBuf = fs.readFileSync(path.join(FILES_DIR, `${job.id}.${job.ext}`))
+      const ex = extractIfNeeded(rawBuf, { name: job.name })
+      if (ex && !ex.ok) return { ok: true, job: rejectJob(job, ex.error) }   // 加密/图片版/压缩流/损坏包=明确拒收文案
+      const raw = ex ? ex.text : rawBuf.toString('utf8')
+      if (ex) job = saveJob({ ...job, meta: ex.meta, updatedAt: now().toISOString() })   // 提取面元数据（面板/审计如实显示）
       const cleaned = cleanText(raw)
       const cleanFile = path.join(FILES_DIR, `${job.id}.clean.md`)
       fs.mkdirSync(FILES_DIR, { recursive: true })

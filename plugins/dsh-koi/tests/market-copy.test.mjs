@@ -24,8 +24,8 @@ test('上传页/结论页文案：含「学习 = 严格回测检验」「结论�
   assert.ok(VERDICT_CALIBER.includes('单侧精确二项检验（α=0.05）'))
   assert.ok(VERDICT_CALIBER.includes('与随机无异」= 命中率与随机基线无统计学差异'))
   assert.ok(VERDICT_CALIBER.includes('不改变中奖概率，也不驱动任何自动行为'))
-  // 上传控件旁：格式收窄如实告知（W2A-04）
-  assert.ok(UPLOAD_HINT.includes('.txt / .md') && UPLOAD_HINT.includes('暂不支持直接解析'))
+  // 上传控件旁：格式面如实告知（收尾批 T3 更新：EPUB/PDF 解禁 + 文本型边界如实告知）
+  assert.ok(UPLOAD_HINT.includes('.txt / .md / .epub / .pdf') && UPLOAD_HINT.includes('请转文字版'))
   // 待补文案（S-119）
   assert.ok(PENDING_LLM_NOTE.includes('待补') && PENDING_LLM_NOTE.includes('绝不静默丢弃'))
   // 确认框：请求量/时长/错峰/中止断点/重访口径逐项在场（§2.5 定稿 + AC-108 计数口径）
@@ -47,7 +47,9 @@ test('禁用词扫描：全部新文案零概率宣称（BC-112/hasProbabilityCl
 test('上传格式校验 / 大小格式化 / token 估算（字节/12）与周预算占比', () => {
   assert.deepEqual(uploadFormatOk('技巧大全.md'), { ok: true, ext: 'md' })
   assert.deepEqual(uploadFormatOk('notes.TXT'), { ok: true, ext: 'txt' })
-  assert.equal(uploadFormatOk('书.pdf').ok, false)
+  assert.deepEqual(uploadFormatOk('书.pdf'), { ok: true, ext: 'pdf' }, '收尾批 T3：PDF 解禁（P3 拍板优先级）')
+  assert.deepEqual(uploadFormatOk('书.epub'), { ok: true, ext: 'epub' }, '收尾批 T3：EPUB 解禁')
+  assert.equal(uploadFormatOk('书.docx').ok, false, '白名单外仍拒（提示请转文字版）')
   assert.equal(uploadFormatOk('无扩展名').ok, false)
   assert.equal(formatBytes(500), '500 B')
   assert.equal(formatBytes(2048), '2.0 KB')

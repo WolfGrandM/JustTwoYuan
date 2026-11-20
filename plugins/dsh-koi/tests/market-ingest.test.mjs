@@ -77,10 +77,13 @@ test('上传面 token 估算口径：字节/12（BC-107 补位）；415 格式�
   assert.equal(estimateTokensFromBytes(1200), 100)
   assert.equal(estimateTokensFromBytes(0), 0)
   const { ingest } = mkIngest({ dir: tmpdir() })
-  const bad = ingest.acceptBuffer({ name: '书.pdf', buffer: Buffer.from('%PDF-1.4'), process: false })
+  const bad = ingest.acceptBuffer({ name: '书.docx', buffer: Buffer.from('word 文档二进制'), process: false })
   assert.equal(bad.ok, false)
   assert.equal(bad.code, 415)
-  assert.ok(bad.error.includes('支持 .txt / .md') && bad.error.includes('暂不支持直接解析'), 'S-118 拒收并说明')
+  assert.ok(bad.error.includes('支持 .txt / .md / .epub / .pdf') && bad.error.includes('请先转文字版'), 'S-118 拒收并说明（收尾批 T3：白名单外 ext 拒收文案同步更新）')
+  // 收尾批 T3：EPUB/PDF 解禁（P3 拍板）——.pdf 不再 415，提取/拒收语义在 processJob 内（见 extract-ingest.test.mjs）
+  const pdfOk = ingest.acceptBuffer({ name: '书.pdf', buffer: Buffer.from('%PDF-1.4'), process: false })
+  assert.equal(pdfOk.ok, true)
   const big = ingest.acceptBuffer({ name: '大书.txt', buffer: Buffer.alloc(1024 * 1024 + 1), process: false, readCfg: {} }, )
   // 默认 20MB 不触发；用小上限配置验证
   const { ingest: ing2 } = mkIngest({ dir: tmpdir(), readCfg: () => ({ ingest: { maxFileMB: 1 } }) })
@@ -304,11 +307,11 @@ test('目录投喂（W2A-21）：inbox 新文件建 job 并移走（移动即防
   const { ingest } = mkIngest({ dir, agent })
   fs.mkdirSync(ingest.INBOX_DIR, { recursive: true })
   fs.writeFileSync(path.join(ingest.INBOX_DIR, '投喂.md'), '# 技巧\n和值区间正文。')
-  fs.writeFileSync(path.join(ingest.INBOX_DIR, '图.pdf'), '%PDF')
+  fs.writeFileSync(path.join(ingest.INBOX_DIR, '图.docx'), 'word 二进制')   // 收尾批 T3：.pdf 已入白名单，改用白名单外 .docx 验「留原处」
   const scan = ingest.scanInbox()
   assert.equal(scan.created, 1)
   assert.equal(fs.existsSync(path.join(ingest.INBOX_DIR, '投喂.md')), false, '消费即移走')
-  assert.equal(fs.existsSync(path.join(ingest.INBOX_DIR, '图.pdf')), true, '不支持格式留在 inbox 待主人处理')
+  assert.equal(fs.existsSync(path.join(ingest.INBOX_DIR, '图.docx')), true, '不支持格式留在 inbox 待主人处理')
   const job = ingest.list().jobs.find((j) => j.name === '投喂.md')
   assert.ok(job && job.sourceType === 'inbox')
   // 空目录幂等
