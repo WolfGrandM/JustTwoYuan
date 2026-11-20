@@ -16,8 +16,9 @@
  * 触发（TF-6 + ADR-0007 TF-6 豁免白名单修订 v1.2 ②，主人 2026-11-18 拍板 #4，docs/31 §4.2）：
  * `kind==='result'` 且（`won===true` 或 `nearMiss` 存在）。won 仅 result 携带（lib/events.js:156；
  * emit 点 lib/scheduler.js 对账入账处）；nearMiss 仅 result 携带（'NM-1'组选命中/'NM-2'两位对，
- * judgeNearMiss 预注册判据代码产出、LLM 不可标注——生效面仅 p3，3d 随 docs/31 §6 第二批）。
- * ssq/dlt 及其余七类事件维持不上气泡（nearMiss 对非数字型恒不产出——judgeNearMiss 非 p3 返回 null，
+ * judgeNearMiss 预注册判据代码产出、LLM 不可标注——生效面 p3/3d 数字型两彩种，3d 随 docs/31 §6
+ * 第二批实装同构生效）。
+ * ssq/dlt 及其余七类事件维持不上气泡（nearMiss 对非数字型恒不产出——judgeNearMiss 仅 p3/3d 生效，
  * docs/31 §4.1「双色球/大乐透不定义、不豁免」）；BRIDGE_FEED_KINDS 白名单常量不动（仍仅 ['result']），
  * 本次扩面 = won 判定处的显式豁免（ADR-0007 §TF-6 白名单 ②行，不得静默恢复、不得静默扩面；
  * 后续扩面仍须主人拍板改 ADR-0007 该节）。

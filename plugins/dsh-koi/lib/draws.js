@@ -263,8 +263,9 @@ export function judge(gameKey, picks, result, gradeMoney = null) {
  *   其余（全对直选 / 一位对 / 零位对）→ null：全对直选走 judge 中奖路径（won=true），
  *   一位对/零位对照常进档案与归因统计（docs/31 §4.1「其余」行，不播报）。
  *
- * 生效面：仅 p3（GAMES 现仅 ssq/dlt/p3，NM 仅数字型定义；福彩 3d 随 docs/31 §6 第二批实装后加入）。
- *   ssq/dlt 不定义、不豁免（复式口径下 near-miss 定义模糊且 ssq 六等奖本就蓝中即有，docs/31 §4.1）。
+ * 生效面：p3 / 3d 数字型两彩种（docs/31 §4.1；3d 随 §6 第二批实装同构生效——与 p3 共用同一判据
+ *   本体，零复制；ssq/dlt 不定义、不豁免（复式口径下 near-miss 定义模糊且 ssq 六等奖本就蓝中即有，
+ *   docs/31 §4.1）。
  *
  * 无晋升特权（主人 2026-11-18 拍板 #2 C 方案「记录它、讲述它，不奖励它」）：返回值只供
  * 战果叙事与 predictions 档案（nearMiss 字段），不进任何加权/晋升判据（BC-008 月报流水线
@@ -277,7 +278,7 @@ export function judge(gameKey, picks, result, gradeMoney = null) {
  * 返回：null 或 { level:'NM-1'|'NM-2', unit:[d,d,d], positional: 位置相同位数 }。
  */
 export function judgeNearMiss(gameKey, picks, result) {
-  if (gameKey !== 'p3') return null   // NM 仅数字型生效；现仅 p3（3d 随第二批，docs/31 §6）
+  if (gameKey !== 'p3' && gameKey !== '3d') return null   // NM 仅数字型 p3/3d 生效（3d 随第二批实装，docs/31 §6；ssq/dlt 不定义不豁免）
   const rd = result && Array.isArray(result.digits) ? result.digits.map(Number) : null
   if (!rd || rd.length !== 3 || !rd.every((x) => Number.isInteger(x))) return null
   const pd = picks && Array.isArray(picks.digits) ? picks.digits : null

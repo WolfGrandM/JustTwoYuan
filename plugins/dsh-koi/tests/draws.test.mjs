@@ -200,6 +200,26 @@ test('judgeNearMiss·多注档位：逐注判定取最高档首注命中（NM-1 
   assert.deepEqual(mix, { level: 'NM-1', unit: [6, 0, 7], positional: 1 }, 'NM-1 与 NM-2 并存取 NM-1（第二注组选命中）')
 })
 
+// ── 3D near-miss（docs/31 §6 第二批：§4.1 判据泛化到 3d——与 p3 共用判据本体零复制，ADR-0007 v1.2 ②白名单范围原文）──
+test('judgeNearMiss·3d：NM-1 组选命中 / NM-2 两位对与 p3 同构（000–999 含 0 形态）', () => {
+  assert.deepEqual(judgeNearMiss('3d', { digits: [6, 0, 7] }, { digits: [0, 6, 7] }), { level: 'NM-1', unit: [6, 0, 7], positional: 1 }, '需求起源同形态样本 607/067')
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0, 7] }, { digits: [7, 6, 0] })?.level, 'NM-1', '任意排列不同都算 NM-1')
+  assert.deepEqual(judgeNearMiss('3d', { digits: [6, 0, 7] }, { digits: [6, 0, 9] }), { level: 'NM-2', unit: [6, 0, 7], positional: 2 })
+  assert.deepEqual(judgeNearMiss('3d', { digits: [0, 0, 7] }, { digits: [0, 7, 0] }), { level: 'NM-1', unit: [0, 0, 7], positional: 1 }, '含 0 重复数字：多重集相同排列不同')
+  assert.deepEqual(judgeNearMiss('3d', { digits: [0, 0, 7] }, { digits: [0, 0, 8] }), { level: 'NM-2', unit: [0, 0, 7], positional: 2 }, '含 0 两位对')
+})
+test('judgeNearMiss·3d：全对直选/一位对/零位对 null；畸形输入整单 null 不抛错；ssq/dlt 生效门外', () => {
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0, 7] }, { digits: [6, 0, 7] }), null, '全对直选走 judge 中奖路径（won=true），不是 near-miss')
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0, 7] }, { digits: [6, 5, 4] }), null, '一位对（§4.1 其余行不播报）')
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0, 7] }, { digits: [1, 5, 4] }), null, '零位对')
+  assert.equal(judgeNearMiss('3d', null, { digits: [0, 6, 7] }), null)
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0] }, { digits: [0, 6, 7] }), null, '位数不符')
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0, 7] }, null), null)
+  assert.equal(judgeNearMiss('3d', { digits: [6, 0, 'x'] }, { digits: [0, 6, 7] }), null, '非整数预测位')
+  assert.equal(judgeNearMiss('ssq', { red: [1, 2, 3, 4, 5, 6], blue: 1 }, { red: [1, 2, 3, 4, 5, 6], blue: 2 }), null, 'ssq 不定义不豁免（生效门 p3/3d 单点）')
+  assert.equal(judgeNearMiss('dlt', { front: [1, 2, 3, 4, 5], back: [1, 2] }, { front: [1, 2, 3, 4, 5], back: [1, 2] }), null, 'dlt 不定义不豁免')
+})
+
 test('期号顺延与跨年（福彩四位年 / 体彩两位年）', () => {
   assert.equal(nextIssue('2026121', '2026-10-22', '2026-10-25'), '2026122')
   assert.equal(nextIssue('26120', '2026-10-21', '2026-10-24'), '26121')
