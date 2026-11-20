@@ -49,6 +49,7 @@ import { createReviewStore } from './review/store.js'
 import { createNarrator } from './review/narrate.js'
 import { createWeeklyReview } from './review/weekly.js'
 import { createHealthScanner } from './review/health.js'
+import { createProposalEngine } from './review/proposal.js'   // 环 A 探索性提案（收尾批 T2）
 import { createMonthlyReview } from './review/monthly.js'
 import { computeForIssue, attachAttribution } from './review/attribution.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
@@ -204,11 +205,27 @@ export function startKoiScheduler(ctx, opts) {
     usageWeeksOf: () => { try { return reviewWeekly.usageWeeks() } catch { return [] } },
     stateFile: path.join(dataDir, 'review', 'health-state.json'),
   })
+  // 环 A 探索性提案引擎（收尾批 T2，docs/32 §6.2③ LLM 面）：insight.aggregate 全量在库 → LLM 提案 K=3
+  // → factorize DSL 校验（不合法丢弃如实记录）→ factor_proposals 提案表 + 因子库 candidate 态（零特权）。
+  // 计量：promptAgent 注入侧记输入（activity='review'），引擎内记输出侧（est 恒标）；cap 态整体跳过。
+  const reviewProposals = createProposalEngine({
+    store: reviewStore,
+    promptAgent: (text) => promptAgent(text, { activity: 'review' }),   // BC-013：review 活动计量
+    usage,
+    readCfg: () => cfgNow(),
+    budgetState: (cfg) => budgetState(cfg ?? cfgNow()),
+    now: nowFn,
+    workDir,
+    log,
+    historyOf: (g) => store.getRecent(g, Infinity),   // 全量在库（最新在前；insight 内部升序整理）
+    stopCheck: () => stopped,
+  })
   // T3 并入（§2.3① 注记）：月报 + 晋升流水线（BC-008 唯一状态变更时点）
   const reviewMonthly = createMonthlyReview({
     store: reviewStore, backtest, readLedger, readPreds, usage, narrator: reviewNarrator,
     emit: emitNotify, now: nowFn, readCfg: () => cfgNow(), log, lock: jobLock,
     reportsDir: path.join(dataDir, 'review', 'reports'),
+    proposals: reviewProposals,   // 环 A 探索性提案段（mind 门控在引擎内；缺席不阻塞月报）
   })
   // M4/T5：settle 观察者（§2.3③）——archive 增量行 + 归因入档，受 review.archiveAuthoritative
   // 开关控制（默认 false：零行为，三 JSON 唯一写面与现状逐位一致；true 的生产切换待主人授权 §4.2）。
@@ -942,6 +959,7 @@ export function startKoiScheduler(ctx, opts) {
       health: reviewHealth,
       tickView: reviewTickView,
       onSettled: reviewOnSettled,   // T5 观察者（archiveAuthoritative 开关控制；测试/面板可直调）
+      proposals: reviewProposals,   // 环 A 探索性提案引擎（收尾批 T2；测试/CLI 可直调 run({period})）
     },
     channelsOverview,
     petBridge,        // ADR-0007 桌宠桥接（onEvent 旁路钩子；测试/面板可直调，事件层零耦合）

@@ -28,6 +28,7 @@ import path from 'node:path'
 import { GAMES } from '../draws.js'
 import { isHoliday } from '../settle-core.js'
 import { binomTailAtLeast } from '../backtest.js'
+import { DISCLAIMER } from '../insight.js'
 import { periodLedgerSlice } from './period.js'
 import { scanHealth } from './health.js'
 import { weekInfoOfPeriod } from './weekly.js'
@@ -59,6 +60,7 @@ export function createMonthlyReview({
   lock = null,
   reportsDir = null,
   evaluateFactor = null,   // 注入面（测试确定性）；缺省 = backtest.runFactor(useLock:false)
+  proposals = null,        // 环 A 探索性提案引擎（收尾批 T2，lib/review/proposal.js；null → 月报如实注明缺席）
 } = {}) {
   const cfgReview = () => ({
     vetoWindowHours: Number(readCfg()?.review?.vetoWindowHours) > 0 ? Number(readCfg().review.vetoWindowHours) : 24,
@@ -86,6 +88,16 @@ export function createMonthlyReview({
    */
   async function runPipeline({ period }) {
     const { vetoWindowHours, monthlyPromotionCap } = cfgReview()
+    // ⓪ 提案因子入观察（环 A 零特权入口，收尾批 T2）：观察期起点已到的 accepted 提案 candidate→observing
+    //    （LEGAL_EDGES 保留边）——与全部因子同一条月报检验流水线（样本外+Bonferroni+上限+否决窗），无任何加权旁路。
+    const activated = []
+    for (const p of store.listProposals().filter((r) => r.status === 'accepted' && r.factorId && r.observeFrom && r.observeFrom <= String(period))) {
+      const f = store.listFactors().find((x) => x.id === p.factorId)
+      if (!f || f.status !== 'candidate') continue
+      store.applyFactorTransition(f.id, 'candidate', 'observing', 'monthly-pipeline',
+        `观察期起点 ${p.observeFrom} 已到（提案 ${p.period}）：入观察，与全部因子同一条月报检验流水线（零特权，无加权旁路）`)
+      activated.push({ id: f.id, name: f.name, observeFrom: p.observeFrom })
+    }
     const factors = store.listFactors().filter((f) => f.status === 'observing')
     const evaluated = []
     const insufficient = []
@@ -147,7 +159,7 @@ export function createMonthlyReview({
       if ([...promoted, ...demoted, ...retired].some((x) => x.id === e.id) || capDenied.some((x) => x.id === e.id)) continue
       if (stillObserving().some((x) => x.id === e.id)) unchanged.push({ id: e.id, name: e.name, hitRate: e.hitRate, baselineRate: e.baselineRate, pValue: e.pValue })
     }
-    return { evaluatedCount: k, alphaAdj, promoted, demoted, retired, capDenied, unchanged, insufficient, vetoWindowHours, monthlyPromotionCap }
+    return { evaluatedCount: k, alphaAdj, promoted, demoted, retired, capDenied, unchanged, insufficient, activated, vetoWindowHours, monthlyPromotionCap }
   }
 
   /** 否决（FR-035/R6）：窗口内 promoted → observing（唯一合法回退边）；过期拒绝 */
@@ -170,8 +182,30 @@ export function createMonthlyReview({
     return { ok: true, factorId, note: String(note), windowEnd, at: new Date(t).toISOString() }
   }
 
-  /** 组装月报全文（战绩 + token 视图 AC-033 + 流水线叙述 + 健康摘要；LLM 只叙述一段） */
-  async function buildReport({ period, pipeline }) {
+  /** 探索性提案段渲染（环 A，收尾批 T2）：缺席/跳过如实注明；BC-001 声明常驻 */
+  function proposalLines(proposals) {
+    if (!proposals) return ['（探索性提案段未运行：提案引擎未注入）']
+    if (proposals.ok === false) return [`（探索性提案段未运行：${proposals.reason ?? proposals.skipped ?? '原因不明'}）`]
+    const out = []
+    if (proposals.note) {
+      out.push(`（${proposals.note}）`, `> ${DISCLAIMER}`)
+      return out
+    }
+    const acc = proposals.accepted ?? []
+    const rej = proposals.rejected ?? []
+    out.push(`本轮提案 ${acc.length + rej.length} 个候选（K=3）：落库 candidate ${acc.length} · DSL 拒收 ${rej.length}${proposals.observeFrom ? ` · 观察期起点 ${proposals.observeFrom}（下月报流水线入观察）` : ''}`)
+    for (const a of acc) {
+      out.push(`✓ ${a.factorId}（${a.game}）${a.name}${a.claim ? `——${a.claim}` : ''}${a.duplicate ? '（重跑幂等：因子已在库）' : '（candidate 态；零特权：与全部因子同一条月报检验流水线）'}`)
+    }
+    for (const r of rej) {
+      out.push(`✗ DSL 拒收（${r.game || '?'}）${r.name}：${(r.errors ?? []).join('；')}（如实记录不静默）`)
+    }
+    out.push(`> ${DISCLAIMER}`)
+    return out
+  }
+
+  /** 组装月报全文（战绩 + token 视图 AC-033 + 流水线叙述 + 探索性提案段 + 健康摘要；LLM 只叙述一段） */
+  async function buildReport({ period, pipeline, proposals = null }) {
     const from = `${period}-01`
     const lastDay = new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0).getDate()
     const to = `${period}-${String(lastDay).padStart(2, '0')}`
@@ -236,6 +270,10 @@ export function createMonthlyReview({
       ...(pipeline.retired.length ? pipeline.retired.map((p) => `× 淘汰 ${p.id}（${p.name}，零观点超 90 天）`) : []),
       ...(pipeline.insufficient.length ? pipeline.insufficient.map((p) => `— 样本不足跳过 ${p.id}：${p.reason}`) : []),
       ...(pipeline.unchanged.length ? [`（维持 observing：${pipeline.unchanged.map((p) => p.id).join('、')}）`] : []),
+      ...(pipeline.activated?.length ? [`（环 A 提案入观察：${pipeline.activated.map((p) => `${p.id}（观察期起点 ${p.observeFrom}）`).join('、')}——零特权，同流水线受检）`] : []),
+      '',
+      '【探索性提案（环 A · mind 门控 · K=3）】',
+      ...proposalLines(proposals),
       '',
       '【口径行】',
       caliber,
@@ -283,7 +321,18 @@ export function createMonthlyReview({
     }
     try {
       const pipeline = await runPipeline({ period })
-      const built = await buildReport({ period, pipeline })
+      // 环 A 探索性提案段（收尾批 T2；mind.enabled 门控在引擎内——CLI 手动月报旁路 mind 闸，不旁路本段）。
+      // 失败/缺席不阻塞月报（narrate 同款：缺席如实报告，不静默不虚构）。
+      let propResult = null
+      if (proposals) {
+        try {
+          propResult = await proposals.run({ period })
+        } catch (e) {
+          propResult = { ok: false, skipped: 'error', reason: `提案段异常：${String(e?.message ?? e).slice(0, 140)}` }
+          log(`[koi] 探索性提案段异常（月报继续）：${propResult.reason}`)
+        }
+      }
+      const built = await buildReport({ period, pipeline, proposals: propResult })
       const ev = await emit({
         kind: 'review', level: 'info', title: `月报 ${period}`, date: d,
         message: built.content.split('\n').slice(0, 8).join('\n') + '\n…（全文见复盘卡片与 CLI report）',
@@ -310,8 +359,8 @@ export function createMonthlyReview({
           fs.writeFileSync(path.join(reportsDir, `monthly-${period}.md`), built.content + '\n')
         } catch (e) { log(`[koi] 月报文件写盘失败（报告仍在 review.db）：${String(e?.message ?? e).slice(0, 120)}`) }
       }
-      log(`[koi] 月报 ${period} 已生成（晋升 ${pipeline.promoted.length} · 降级 ${pipeline.demoted.length} · 淘汰 ${pipeline.retired.length}）`)
-      return { ok: true, period, content: built.content, pipeline, eventId: ev?.id ?? null }
+      log(`[koi] 月报 ${period} 已生成（晋升 ${pipeline.promoted.length} · 降级 ${pipeline.demoted.length} · 淘汰 ${pipeline.retired.length}${propResult?.ok ? ` · 提案落库 ${(propResult.accepted ?? []).length}/DSL 拒收 ${(propResult.rejected ?? []).length}` : ' · 提案段缺席如实报告'}）`)
+      return { ok: true, period, content: built.content, pipeline, proposals: propResult, eventId: ev?.id ?? null }
     } finally {
       if (lock && acq && acq.ok) { try { lock.release() } catch { /* 尽力释放 */ } }
     }

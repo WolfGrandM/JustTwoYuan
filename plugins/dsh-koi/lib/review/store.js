@@ -10,6 +10,7 @@
  *   attribution         —— 逐因子代码归因（FR-034，LLM 永不参与判定——BC-014/§5）。
  *   factors             —— 因子库状态机（DC-004 单向 + promoted→observing 唯一回退边）。
  *   factor_state_log    —— 状态变更审计注记（BC-008：状态变更唯一时点 = monthly 流水线事务 + veto CLI）。
+ *   factor_proposals    —— 环 A 探索性提案表（收尾批 T2：提案时刻/依据数据血统/观察期起点；DSL 拒收如实记录）。
  *   reports             —— 周/月报全文（UNIQUE(kind,period) 幂等守卫）。
  *
  * 纪律双闸（§2.2）：应用层只有 monthly.js 与 veto CLI 调 applyFactorTransition；
@@ -61,6 +62,19 @@ CREATE TABLE IF NOT EXISTS factors(
 CREATE TABLE IF NOT EXISTS factor_state_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, factor_id TEXT,
   from_status TEXT, to_status TEXT, at TEXT, actor TEXT, note TEXT);
+
+-- 环 A 探索性提案表（收尾批 T2；只加不改不删——schema_version 保持 1）
+CREATE TABLE IF NOT EXISTS factor_proposals(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,              -- 提案所在月报期（yyyy-mm）
+  factor_id TEXT,                    -- DSL 通过 → 因子库 candidate 态的 id；DSL 拒收 → NULL
+  game TEXT, name TEXT, claim TEXT,
+  spec TEXT,                         -- 原始 DSL spec JSON（血统可追溯）
+  status TEXT CHECK(status IN ('accepted','rejected-dsl')),
+  errors TEXT,                       -- DSL 校验错误清单 JSON（如实记录不静默）
+  lineage TEXT,                      -- 依据数据血统 JSON（insight.aggregate 摘要）
+  observe_from TEXT,                 -- 观察期起点（下一月报期 yyyy-mm；accepted 才有）
+  at TEXT NOT NULL);                 -- 提案时刻
 
 CREATE TABLE IF NOT EXISTS reports(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -265,6 +279,46 @@ export function createReviewStore({ dataDir, now = () => new Date(), log = () =>
     FROM factor_state_log WHERE factor_id=? ORDER BY at DESC, id DESC`).all(factorId ?? null)
     .map((r) => ({ id: r.id, factorId: r.factor_id, fromStatus: r.from_status, toStatus: r.to_status, at: r.at, actor: r.actor, note: r.note }))
 
+  // ── factor_proposals（环 A 提案表，收尾批 T2）＋ 提案因子入库（candidate 态）──────────
+  /**
+   * 提案因子入库：candidate 态（LEGAL_EDGES candidate→observing 保留边的消费面；
+   * store.js:115 注释「candidate 边保留给后续卡片因子入观察」）。id 确定性（proposal-<period>-<game>-<n>）
+   * → 重跑幂等：UNIQUE 冲突不覆盖不改写（只加不改），返回 duplicate 供调用方如实记账。
+   */
+  function addCandidateFactor({ id, game, name, source, specRef = null, p0 = null }) {
+    if (!id || !game || !name) throw new Error('提案因子入库缺 id/game/name')
+    const at = now().toISOString()
+    try {
+      db.prepare(`INSERT INTO factors(id, game, name, source, spec_ref, p0, status, version, created_at)
+        VALUES(?,?,?,?,?,?,'candidate',1,?)`).run(String(id), String(game), String(name), String(source ?? 'proposal'), specRef, p0, at)
+    } catch (e) {
+      if (/UNIQUE constraint failed: factors\.id/.test(String(e.message))) return { ok: false, duplicate: true, id: String(id) }
+      throw e
+    }
+    log(`[koi] 提案因子入库：${id}（candidate 态；观察期起点见 factor_proposals）`)
+    return { ok: true, id: String(id), status: 'candidate', createdAt: at }
+  }
+
+  /** 提案一行落表（accepted / rejected-dsl 两种状态；DSL 拒收 errors 必带——如实记录不静默）。
+   *  node:sqlite 绑定纪律：对象/数组字段（spec/errors/lineage）统一 JSON 字符串化后落库。 */
+  function recordProposal({ period, factorId = null, game = null, name = null, claim = null, spec = null, status, errors = null, lineage = null, observeFrom = null, at }) {
+    if (!period) throw new Error('提案缺 period')
+    if (!['accepted', 'rejected-dsl'].includes(status)) throw new Error(`提案 status 非法：${status}`)
+    if (status === 'accepted' && !factorId) throw new Error('accepted 提案缺 factorId（进因子库 candidate 态的落点）')
+    const txt = (v) => (v == null || typeof v === 'string') ? v : JSON.stringify(v)
+    const r = db.prepare(`INSERT INTO factor_proposals(period, factor_id, game, name, claim, spec, status, errors, lineage, observe_from, at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(String(period), factorId, txt(game), txt(name), txt(claim), txt(spec), String(status), txt(errors), txt(lineage), observeFrom, String(at ?? now().toISOString()))
+    return { ok: true, id: Number(r.lastInsertRowid) }
+  }
+
+  /** 提案清单（月报流水线 ⓪ 观察期起点激活 + 面板/CLI 消费；period 过滤可选） */
+  const listProposals = (period = null) => db.prepare(
+    `SELECT id, period, factor_id AS factorId, game, name, claim, spec, status, errors, lineage, observe_from AS observeFrom, at
+     FROM factor_proposals ${period ? 'WHERE period=?' : ''} ORDER BY at DESC, id DESC`)
+    .all(...(period ? [String(period)] : []))
+    .map((r) => ({ ...r, spec: safeJson(r.spec), errors: safeJson(r.errors), lineage: safeJson(r.lineage) }))
+
   // ── reports（周/月报全文；UNIQUE(kind,period) 幂等守卫）───────────────────────
   function recordReport(kind, period, content, eventId = null) {
     try {
@@ -318,6 +372,7 @@ export function createReviewStore({ dataDir, now = () => new Date(), log = () =>
     db, migrate, fileOf: () => FILE,
     upsertArchive, recordAttribution,
     listFactors, applyFactorTransition, resolvePendingPromotions, stateLogOf,
+    addCandidateFactor, recordProposal, listProposals,
     recordReport, getReport, listReports,
     archiveStats, attributionAgg,
   }
