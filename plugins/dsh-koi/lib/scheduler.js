@@ -5,6 +5,7 @@
  *          （失败自动重试，最多 3 次；18:10 之后还成功的算「晚到」；19:50 放弃并致歉）
  *   22:00  轮询官方开奖 → 拆单元按官方奖级判定 → 记模拟账本 → 战果事件 → 增量入库
  *          （开奖一般 21:30–22:15 间公布，15 分钟一轮，23:30 前放弃；没对完的顺延到第二天）
+ *   19:30  停购倒计时（全局每日 1 条，当日有开奖彩种才播；panelOnly 载体 + 桌宠气泡白名单 ③）
  *   任意时刻  面板「现在来一注」→ 走同一条出号流水线，标「加餐/手动推荐」（不记账，任何模式可用）
  *   22:30  自动模式对账日心跳判定（全部启用渠道静默 = 异常 → 告警 + 面板红标）
  *
@@ -64,6 +65,11 @@ const FILE_WAIT_MS = 4 * 60_000          // 等她写结果文件的上限
 const FILE_POLL_MS = 3_000
 const MAX_ATTEMPTS = 3
 const VOID_HISTORY_COUNT = 50            // C1：期号跳跃时翻历史核实目标期的回看期数
+// P12 停购倒计时（docs/31 §6 第三批，主人 2026-11-18 拍板 #7）：全局每日 19:30 一条。
+// 两个时刻均为拍板定值（主人可改常量一处）；停售 20:00 = GAMES 四彩种 drawTimeText「20:00 停售」
+// 共同口径（docs/31 #7「各省或有分钟级差异，实施时核对」——差异出现时只改 STOP_SALE_AT 一处）。
+const COUNTDOWN_AT = '19:30'
+const STOP_SALE_AT = '20:00'
 
 // ── v1.1 纯逻辑层已搬迁 lib/settle-core.js（T-05：消除 events/drawstore→scheduler 循环①②）──
 // 本地消费（settleOne/tick/status/promptAgent 七符号）+ 原地 re-export 全部符号保既有 import 路径兼容
@@ -403,6 +409,24 @@ export function startKoiScheduler(ctx, opts) {
     return judged.money > 0 ? `${base}锦鲤不找借口。` : `${base}不过直选就是直选，账本记 0，锦鲤不找借口。`
   }
 
+  // ── 停购倒计时正文（P12/TF-6 第三次豁免；docs/31 §4.3 占位文案原文 + §6 第三批）──────
+  // 数据源现算（P12 技术现状「koi 有 predictAt 时刻表与开奖日历，倒计时数据源现成」）：
+  // 开奖日历 = gamesForDate（drawDays），时刻 = GAMES[k].drawAt 结构化开奖时刻——纯本地
+  // 字符串/日历运算，零网络零 LLM 零批量作业。
+  // 文案：主句 = docs/31 §4.3 占位原文逐字（拍板 #7 引用，「与诚实条款无冲突——不涉及中奖暗示」）；
+  // 「今晚开奖」与停售差异行 = 自拟简洁版【主人可改】——改文案只动本函数一处。
+  function countdownText(today, nowH) {
+    const mins = Math.max(0, (Number(STOP_SALE_AT.slice(0, 2)) * 60 + Number(STOP_SALE_AT.slice(3)))
+      - (Number(nowH.slice(0, 2)) * 60 + Number(nowH.slice(3))))
+    const names = gamesForDate(today).map((k) => `${GAMES[k].name}（${GAMES[k].drawAt} 开奖）`).join('、')
+    return [
+      '⏰【锦鲤 · 停购倒计时】',
+      `离今晚停售还有 ${mins} 分钟——要买要趁早，锦鲤的号已经在路上啦！`,
+      `今晚开奖：${names}`,
+      '（20:00 停售，各省或有分钟级差异，以当地公告为准）',
+    ].join('\n')
+  }
+
   // ① emit 封装（事件层统一重试/补发；emit 返回事件快照回填 pushedAt/pushErr——MD-10）
   // 桌宠桥接挂点（ADR-0007 §7）：emit 落库+投递完成后旁路投喂——不进渠道目录、不写 delivery、
   // 不影响状态机/补发/心跳；onEvent 内部全兜底（永不抛/永不重试），双 try 再隔离。
@@ -654,6 +678,26 @@ export function startKoiScheduler(ctx, opts) {
       }
       // 今天不开的彩种，把残留状态清掉（比如用户新开了某个彩种）
       for (const k of GAME_ORDER) if (!drawToday.includes(k) && state.games[k]?.phase === 'idle') delete state.games[k]
+
+      // ── 停购倒计时段（P12 内容源拍板 #7 = A 停购倒计时；docs/31 §6 第三批，TF-6 第三次豁免）──
+      // 全局每日 19:30 一条（非每彩种 1 条）：当日有开奖彩种才播（P13 定义原文；休市日已在
+      // !holiday 外整段跳过——休市日无开奖无停售，drawToday 兜底防未来 drawDays 收缩）；
+      // 幂等守卫同心跳（state.countdownOn 当日一条）。错峰守卫兼容：19:30 在禁窗 17:00–22:30
+      // 内，但 BC-012 守卫语义=「禁止重计算（全量回测、全量爬取、图谱投影）」（docs/12:106
+      // 原文，消费点 backfill/backtest/ingest/narrate 的 offpeakOnly 均为重计算门）——本段是
+      // 播报不是重计算（时刻表现算 + 单条事件 emit，零 LLM/零抓取），不属守卫对象。
+      // 时效性：过停售线不播——「还有 N 分钟」为假，宁缺毋假（进程缺席整个窗口 = 当日静默）。
+      if (now >= COUNTDOWN_AT && now < STOP_SALE_AT && drawToday.length > 0 && state.countdownOn !== today) {
+        state.countdownOn = today
+        saveState()
+        await emitNotify({
+          kind: 'countdown', date: today,
+          body: countdownText(today, now),   // TF-17：正文直传（渲染层标题仅兜底）
+          noRetry: true,                     // 时效性内容一次即止（FR-005 例外口径同 quickpick/test——补发的倒计时无意义）
+          panelOnly: true,                   // TF-6 收敛口径：QQ 等用户渠道不投，静默进面板（review 同款载体）；桌宠气泡经桥接白名单 ③（ADR-0007 v1.4）
+        })
+        log(`[koi] 停购倒计时已播（今日开奖：${drawToday.map((k) => GAMES[k].name).join('、')}）`)
+      }
 
       // ── 对账段（今天的 + 顺延的；账本诚实优先于模式门——已出的号必对账，BC-006）──
       if (now >= settleAt) {
