@@ -121,7 +121,15 @@ export function createMetering({ ctx = null, usage = null, now = () => new Date(
       log(`[koi] M3 计量 H1 agent/assistant-stream 注册失败（降级 turn 收口/路径 B）：${String(e?.message ?? e).slice(0, 120)}`)
     }
     if (typeof deriveTurn === 'function') channels.turnReplay = true
-    if (ctx?.tokenMeter && typeof ctx.tokenMeter.measure === 'function') channels.tokenMeter = true
+    // H3 探测容错（2026-11-21 部署事故修正）：cordis 真宿主上未声明 inject 的服务属性取值即抛
+    // （「cannot get property "tokenMeter" without inject」），可选链防不住 getter 抛错——不包裹
+    // 会沿 startKoiScheduler 构造期整体中止调度器（生物钟全停）。此处 try/catch 退化 = :104 注释
+    // 自述契约「不可达 gate() 恒 null（闸门静默跳过）→ path-b est 兜底」，计量永不阻塞主线。
+    try {
+      if (ctx?.tokenMeter && typeof ctx.tokenMeter.measure === 'function') channels.tokenMeter = true
+    } catch {
+      log('M3 计量探测：tokenMeter 不可达（cordis inject 未声明）→ 闸门恒 null（记账通道以 H1/H2 为准，全败时 path-b est 兜底）')
+    }
     log(`[koi] M3 计量探测：stream=${channels.stream} turnReplay=${channels.turnReplay} tokenMeter=${channels.tokenMeter} → mode=${modeOf()}` +
       (modeOf() === 'path-b' ? '（三通道全败=路径 B est 定额兜底，FR-047 首月对账校准）' : '（路径 A 直采；单通道失败逐 step 自动降 est 兜底）'))
     return { channels: { ...channels }, mode: modeOf() }

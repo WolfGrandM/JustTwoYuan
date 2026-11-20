@@ -152,6 +152,95 @@ test('②c 定额表：activity 桶定额 > default；pathBQuota basis 断言（
   assert.equal(pathBQuota({ activity: 'deliberation', model: 'deepseek-chat' }).basis, 'activity', 'byModel 留空（FR-047 首月回填）→ activity 桶生效')
 })
 
+// ── ②d cordis 真宿主容错（2026-11-21 部署事故堵盲区）──────────────────────────
+// 事故回归：cordis 真宿主上未声明 inject 的服务属性「取值即抛」（可选链防不住 getter 抛错），
+// metering.js H3 探测行曾无包裹 → startKoiScheduler 构造期整体中止（生物钟全停，journal
+// 「调度器启动失败：cannot get property "tokenMeter" without inject」）。既有桩全是
+// null/plain ctx 测不出该语义——本用例用 getter-throw 桩复现 cordis 行为锁死容错。
+function cordisLikeCtx(base = {}) {
+  return Object.defineProperty({ ...base }, 'tokenMeter', {
+    enumerable: true,
+    get() { throw new Error('cannot get property "tokenMeter" without inject') },
+  })
+}
+
+test('②d cordis 容错：tokenMeter 取值即抛 → attachHostListeners 不抛错；无 on 全败 path-b / 有 on 走 H1 path-a，tokenMeter 恒 false + 不可达 log', () => {
+  // 组合一：无 on（H1/H2/H3 全败）→ path-b est 兜底——不可达不伪装成可用
+  {
+    const { metering, logs } = mk({ ctx: cordisLikeCtx() })
+    const probe = metering.attachHostListeners()   // 事故原点：修正前在此抛错
+    assert.deepEqual(probe.channels, { stream: false, turnReplay: false, tokenMeter: false })
+    assert.equal(probe.mode, 'path-b')
+    assert.ok(logs.some((m) => m.includes('tokenMeter 不可达（cordis inject 未声明）')), 'H3 不可达如实落 log')
+    assert.equal(metering.gate('s'), null, '闸门恒 null（静默跳过，25 分钟链 + 周预算兜底仍全在）')
+    const r = metering.recordStep({ activity: 'deliberation', role: 'chair', callRef: 'x', usage: null, promptText: 'abcd' })
+    assert.equal(r.mode, 'path-b')
+    assert.equal(r.est, true, '全败 → est:true 定额记账（FR-047 首月对账校准面）')
+  }
+  // 组合二：有 on（真宿主形态——cordis Context 自带事件面）→ H1 注册成功 stream=true →
+  // mode=path-a（记账通道不受 H3 拖累），tokenMeter 仍恒 false 不改判
+  {
+    const { metering, logs } = mk({ ctx: cordisLikeCtx({ on: () => {} }) })
+    const probe = metering.attachHostListeners()
+    assert.deepEqual(probe.channels, { stream: true, turnReplay: false, tokenMeter: false })
+    assert.equal(probe.mode, 'path-a')
+    assert.ok(logs.some((m) => m.includes('tokenMeter 不可达（cordis inject 未声明）')), '混合态同样落不可达 log')
+  }
+})
+
+test('②d cordis 容错·装配面：tokenMeter 取值即抛的 ctx → startKoiScheduler 不中止（生物钟照常装配）+ path-b est 记账逐位如旧', async () => {
+  const dir = tmpdir()
+  const configPath = path.join(dir, 'koi.config.json')
+  const dataDir = path.join(dir, 'koi')
+  const workDir = path.join(dir, 'koi-work')
+  fs.mkdirSync(dataDir, { recursive: true })
+  fs.writeFileSync(configPath, JSON.stringify({ schemaVersion: 2, ...buildConfigDefaults() }))
+  const logs = []
+  const ctx = {
+    sessionController: {
+      create: async ({ sessionId }) => {},
+      prompt: async (req) => {   // 单 agent 交卷契约：写 predict 文件（模拟她写结果文件）
+        const m = req.content[0].text.match(/predict-[\w.-]+\.json/)
+        if (!m) return
+        fs.writeFileSync(path.join(workDir, m[0]), JSON.stringify({
+          schemaVersion: 1, picks: { digits: [6, 4, 7] }, message: 'x', summary: '冷号回补。',
+        }))
+      },
+    },
+  }
+  const hostile = Object.defineProperty(ctx, 'tokenMeter', {
+    enumerable: true,
+    get() { throw new Error('cannot get property "tokenMeter" without inject') },
+  })
+  const sched = startKoiScheduler(hostile, {   // 事故原点：修正前 startKoiScheduler 整体抛错
+    dshHome: dir, configPath, dataDir, workDir,
+    log: (m) => logs.push(m),
+    now: NOW,
+    fetch: {
+      fetchHistory: async () => Array.from({ length: 30 }, (_, i) => ({
+        issue: String(26282 - i), date: '2026-10-2' + (3 - Math.floor(i / 10)), digits: [i % 10, 4, 7],
+      })),
+      fetchLatestDraw: async () => ({ issue: '26283', date: '2026-10-25', digits: [6, 4, 7] }),
+    },
+  })
+  try {
+    assert.ok(sched.mind?.metering, '调度器照常装配（生物钟等价面在位）')
+    const ms = sched.mind.meteringStatus()
+    assert.deepEqual(ms.channels, { stream: false, turnReplay: false, tokenMeter: false })
+    assert.equal(ms.mode, 'path-b')
+    assert.ok(logs.some((m) => m.includes('tokenMeter 不可达（cordis inject 未声明）')), '不可达 log 如实落')
+    // 未打标调用面 quickpick：path-b est:true 记账逐位如旧（与「scheduler 装配」用例同口径）
+    const r = sched.quickpick('p3')
+    let job = sched.qpJob(r.id)
+    for (let i = 0; i < 50 && job.status === 'running'; i++) { await new Promise((res) => setTimeout(res, 100)); job = sched.qpJob(r.id) }
+    assert.equal(job.status, 'done')
+    const entries = readJson(path.join(dataDir, 'token-usage.json'), null)?.entries ?? []
+    assert.ok(entries.length >= 1)
+    assert.equal(entries[0].activity, 'predict')
+    assert.equal(entries[0].est, true, 'path-b est:true 记账不受 H3 取值即抛影响')
+  } finally { sched.stop() }
+})
+
 // ── ③ 角色分账 ────────────────────────────────────────────────────────────────
 test('③ 角色分账：四角色 mock 各 N step → weekByRole 逐角色合计与手算一致；deliberation 桶并入 totals.total', () => {
   const { dir, usage, metering } = mk({ ctx: { on: () => {} } })
