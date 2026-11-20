@@ -723,7 +723,8 @@ async function main() {
   }
 
   // ── docs/32 §6.2 第一批：全量数据探索三件（数据面：纯计算零 LLM 零 token 零落盘——只读本地库；
-  //    注入面=接进 dataPack 有行为变化+每期 token 成本，§8.5 :137 单独拍板，本命令不做）。
+  //    注入面已于收尾批 T1 接进 dataPack（lib/stats.js insightBlock：相似 top-3 + 局势分位，
+  //    prompt 增量计量走 usage predict 桶既有机制 est 恒标）；本命令=独立查询面，语义不变）。
   //    防前视硬约束（§6.2①）：相似检索只看严格早于目标期的历史——模块构造级保证 + 测试断言锁死。──
   if (cmd === 'insight') {
     const sub = process.argv[3] ?? ''

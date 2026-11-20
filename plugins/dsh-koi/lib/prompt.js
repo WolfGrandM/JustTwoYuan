@@ -84,7 +84,7 @@ export function buildPredictPrompt({ gameKey, cfg, tier, history, issue, outPath
   const spec = t ? specTextTier(t) : specText(gameKey)
   const persona = String(cfg?.persona ?? '').trim() || DEFAULT_PERSONA
   const lever = leversFor(cfg)
-  const pack = dataPack(gameKey, history, { tailCount: lever.tail })
+  const pack = dataPack(gameKey, history, { tailCount: lever.tail, issue })   // issue=目标期号：注入探索性素材段（相似局势/局势分位，收尾批 T1；数据不足自动省略）
   const today = new Date()
   const dateStr = today.toLocaleDateString('sv-SE')
   const week = WEEKDAY[today.getDay()]
