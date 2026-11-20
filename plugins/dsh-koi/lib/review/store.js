@@ -340,6 +340,16 @@ export function createReviewStore({ dataDir, now = () => new Date(), log = () =>
 
   // ── orchestration_log / agenda_versions（M3-T2 编排记录与议程版本；append-only 只加通道）──
   /**
+   * 归因行读取（M3-T3 注入面只读扩展：按因子聚合近期命中行——injector 因子战绩块数据源；
+   * 只读零写路径）。factorId 过滤可选；返回按写入序倒序（最新在前）。
+   */
+  const listAttribution = (factorId = null, limit = 20) => db.prepare(
+    `SELECT a.id, a.archive_id AS archiveId, a.factor_id AS factorId, a.hit, a.detail, a.at,
+            p.game AS game, p.issue AS issue, p.date AS date
+     FROM attribution a LEFT JOIN predictions_archive p ON p.id = a.archive_id
+     ${factorId ? 'WHERE a.factor_id = ?' : ''} ORDER BY a.id DESC LIMIT ?`)
+    .all(...(factorId ? [String(factorId)] : []), limit)
+  /**
    * 编排一行落表（逐角色逐轮；content=角色产出 JSON 全文或剔除标记文本；append-only——本方法
    * 只 INSERT，零 UPDATE/DELETE 导出，BC-002 预注册语义）。
    */
@@ -427,6 +437,7 @@ export function createReviewStore({ dataDir, now = () => new Date(), log = () =>
     listFactors, applyFactorTransition, resolvePendingPromotions, stateLogOf,
     addCandidateFactor, recordProposal, listProposals,
     recordOrchestration, listOrchestration, registerAgendaVersion, listAgendaVersions,   // M3-T2 编排记录/议程版本（append-only 只加通道）
+    listAttribution,                                                                     // M3-T3 注入面只读扩展（按因子聚合近期命中行）
     recordReport, getReport, listReports,
     archiveStats, attributionAgg,
   }

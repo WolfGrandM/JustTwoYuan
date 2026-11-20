@@ -3,10 +3,11 @@
  *
  * 触发器映射表（改表即换口径——§9-R2 默认处置）：
  *   ① 档位连续 3 期低于计划档位 → **N/A**（stamp 无计划档位字段——DC-001 计划档位是 M3 编排器
- *      产物，effortTier 是 token 努力档不可混用；随 M3 接入补 stamp.plannedTier 后启用）
+ *      产物，effortTier 是 token 努力档不可混用；随 M3 接入补 stamp.plannedTier 后启用——T4）
  *   ② 兜底连续 3 期 → 按条目 via='fallback' 映射（可计算）
- *   ③ 注入连续失败 ≥2 期 → 「LLM 通道连续异常」= ingest pending-llm ≥2 任务 或 no-model 错误
- *      彩种数 ≥2（signals 注入——state/ingest 不在 readPreds 数据源内，由 scheduler 提供）
+ *   ③ 注入连续失败 ≥2 期 → **M3-T3 转实算**（条目 injectionNote stamp 连续 ≥2 期 per 彩种 →
+ *      'injection-streak' 告警）；映射口径（ingest pending-llm ≥2 / no-model 彩种 ≥2）并列保留
+ *   （signals 注入——state/ingest 不在 readPreds 数据源内，由 scheduler 提供）
  * 本地可验子集（FR-049，AC-025/B-24）：未结清 = given-up 且 >7 天才报红；voided 只列历史累计、无阈值；
  * 新鲜度复用 isStaleDraw（settle-core.js:129-135 单点）。
  *
@@ -74,6 +75,21 @@ export function scanHealth({ readPreds, readCfg = () => ({}), store = null, toda
 
   // ④ 注入均值 → N/A（M3 未建）
   items.push({ name: '注入均值', ok: null, detail: 'N/A（注入层属 M3，未建）' })
+
+  // ④b 注入连续失败计数（M3-T3 接线，FR-031/AC-028 触发器③转实算）：每彩种最近 2 条 daily 条目
+  // 均带 injectionNote（FR-031 档案标注 = 注入失败面）→ 连续 ≥2 期并入告警（阈值 FR-033 原文）。
+  // 单期失败/失败后恢复 → 不告警（宁纵不误——注记可能来自裁剪标注等降级面，连续 2 期才达线）。
+  const INJECTION_STREAK_MIN = 2
+  for (const game of ['ssq', 'dlt', 'p3']) {
+    const last2 = entries.filter((e) => e.game === game).slice(-2)
+    if (last2.length >= INJECTION_STREAK_MIN
+      && last2.every((e) => typeof e.injectionNote === 'string' && e.injectionNote.trim())) {
+      alerts.push({
+        type: 'injection-streak', level: 'warn', game,
+        detail: `${game} 注入连续 ${INJECTION_STREAK_MIN} 期失败（最近注记：${last2[1].injectionNote.slice(0, 60)}）——FR-031 触发器③实算（M3-T3 接线）`,
+      })
+    }
+  }
 
   // ⑤ 月 token 走势：近 4 周合计（usage 周度汇总唯一来源 DC-011；review 桶并入后口径）
   const weeks = (Array.isArray(usageWeeks) ? usageWeeks : []).slice(-4)
