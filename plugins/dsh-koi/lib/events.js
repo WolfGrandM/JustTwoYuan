@@ -17,7 +17,12 @@ import { renderEvent } from './render.js'
 import { loadAdapters, resolveChannelCfg, secretsOf, maskString } from './channels/index.js'
 import { retryIntervalMs, deadlineForKind, isPastDeadline, enqueueRepush, REPUSH_QUEUE_MAX } from './settle-core.js'
 
-export const EVENT_KINDS = ['predict', 'quickpick', 'result', 'apology', 'alert', 'advice', 'heartbeat', 'test', 'review']
+// P12/TF-6 第三次豁免（docs/31 §6 第三批，主人拍板 #7）：kind='countdown' 停购倒计时——
+// 全局每日 19:30 一条的定时投喂事件源（P12 技术现状「EVENT_KINDS 无对应事件源，需新增 scheduler
+// 定时器或新 kind」的落地载体）；panelOnly 载体（TF-6 收敛口径：QQ 等用户渠道不投，静默进面板），
+// 桌宠气泡经白名单 ③（ADR-0007 v1.4）在桥接触发谓词单点放行；won/nearMiss 恒 null——
+// 红点/未读统计口径不变仍只认 won===true（倒计时绝不触发 winUnreadCount）。
+export const EVENT_KINDS = ['predict', 'quickpick', 'result', 'apology', 'alert', 'advice', 'heartbeat', 'test', 'review', 'countdown']
 const SEND_TIMEOUT_MS = 15_000
 // T-05：本行原 REPUSH_MAX = 20 手动镜像已删除——补发上限归一 settle-core.REPUSH_QUEUE_MAX（enqueueRepush 默认同参，FR-005 上限 20）
 

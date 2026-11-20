@@ -18,10 +18,16 @@
  * emit 点 lib/scheduler.js 对账入账处）；nearMiss 仅 result 携带（'NM-1'组选命中/'NM-2'两位对，
  * judgeNearMiss 预注册判据代码产出、LLM 不可标注——生效面 p3/3d 数字型两彩种，3d 随 docs/31 §6
  * 第二批实装同构生效）。
- * ssq/dlt 及其余七类事件维持不上气泡（nearMiss 对非数字型恒不产出——judgeNearMiss 仅 p3/3d 生效，
+ * ssq/dlt 及其余事件维持不上气泡（nearMiss 对非数字型恒不产出——judgeNearMiss 仅 p3/3d 生效，
  * docs/31 §4.1「双色球/大乐透不定义、不豁免」）；BRIDGE_FEED_KINDS 白名单常量不动（仍仅 ['result']），
  * 本次扩面 = won 判定处的显式豁免（ADR-0007 §TF-6 白名单 ②行，不得静默恢复、不得静默扩面；
  * 后续扩面仍须主人拍板改 ADR-0007 该节）。
+ *
+ * 白名单 ③（TF-6 第三次豁免修订 v1.4，主人 2026-11-18 拍板 #7，docs/31 §6 第三批）：停购倒计时
+ * `kind==='countdown'` 上桌宠气泡——全局每日 19:30 一条（scheduler 定时点产出，panelOnly 载体：
+ * 事件层只投面板渠道，桌宠气泡经本旁路钩子到达）；同在触发谓词单点扩面，BRIDGE_FEED_KINDS
+ * 常量不动；won/nearMiss 恒 null——红点/未读统计口径不变仍只认 won===true（倒计时绝不触发
+ * winUnreadCount）。
  * 红点/未读统计口径不变：winUnreadCount 仍只认 won===true（NM 上气泡但不计未读，叙事非待办）。
  *
  * 降级（ADR-0007 §1-3）：dsh-pet 未装/未启用/端口不在/取锁失败/投喂失败——一律静默跳过并记一行日志，
@@ -101,7 +107,11 @@ export function createPetBridge({ readCfg = () => ({}), log = () => {}, fetch: f
     try {
       const bc = petBridgeCfg(readCfg())
       if (bc.enabled !== true) return { fed: false, skipped: 'disabled' }                       // 三态①开关关闭：零日志零 HTTP
-      if (!BRIDGE_FEED_KINDS.includes(ev?.kind) || (ev?.won !== true && ev?.nearMiss == null)) {  // TF-6 + 白名单 v1.2 ②：won 战果 或 near-miss 战果（nearMiss 仅 result 携带；红点/未读口径不变仍只认 won）
+      // 触发谓词（白名单单点）：kind ∈ BRIDGE_FEED_KINDS（仍仅 result）或 countdown（白名单 ③，v1.4）；
+      // result 门内仍须 won===true 或 nearMiss 存在（白名单 v1.2 ②原语义逐位不变）——
+      // countdown 事件 won/nearMiss 恒 null，靠 kind 放行；红点/未读口径不变仍只认 won。
+      const kindOk = BRIDGE_FEED_KINDS.includes(ev?.kind) || ev?.kind === 'countdown'
+      if (!kindOk || (ev?.kind === 'result' && ev?.won !== true && ev?.nearMiss == null)) {
         return { fed: false, skipped: 'not-winning' }
       }
       if (!isLoopbackUrl(bc.baseUrl)) {                                                          // FZ-4：端口绝不出回环
@@ -137,7 +147,9 @@ export function createPetBridge({ readCfg = () => ({}), log = () => {}, fetch: f
       const relRes = await postJson(doFetch, q(`${base}/lock/release`, { pet }), { lockId: String(lockId) })
       if (!relRes.ok) log(`[koi] 桌宠桥接：释放锁失败（${relRes.detail}）——锁将按 expiresAt 自然过期`)
       if (bcFailed) return { fed: false, skipped: bcFailed }
-      log(`[koi] 桌宠桥接：战果已投喂 dsh-pet（${ev.game ?? '?'} 第 ${ev.issue ?? '?'} 期）`)
+      log(ev.kind === 'countdown'
+        ? '[koi] 桌宠桥接：停购倒计时已投喂 dsh-pet（白名单 ③，全局每日 19:30 一条）'
+        : `[koi] 桌宠桥接：战果已投喂 dsh-pet（${ev.game ?? '?'} 第 ${ev.issue ?? '?'} 期）`)
       return { fed: true }
     } catch (e) {
       try { log(`[koi] 桌宠桥接：异常静默降级（${String(e?.message ?? e).slice(0, 120)}）——事件层不受影响`) } catch {}
