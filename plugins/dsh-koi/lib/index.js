@@ -364,6 +364,31 @@ export default {
       })
     })
 
+    // ── M3-T5 博弈编排只读面（docs/33 §2.5 index.js 行）：编排记录列表+单期全文（orchestration_log
+    //    append-only 只读消费，archiveKey 过滤）、计量模式与角色分项周耗（metering weekByRole——FR-046
+    //    分项记账面）、议程版本清单（FR-021）、注入健康计数（injector.stats BC-004 过滤面）、剥离监听器
+    //    接口位状态（attachMemoryGuard 条件实装件如实披露）。既有 13 路由形状逐位不动（FZ-6 加法）；
+    //    经既有 route() helper 继承 fail-closed（FZ-4 语义不变）。零写路径。
+    route('exact', '/dsh-koi/api/mind', async (req, res) => {
+      if (!requireMethod(req, res, 'GET')) return
+      if (!requireSched(res)) return
+      const u = new URL(req.url, 'http://x')
+      const archiveKey = u.searchParams.get('archiveKey') || null
+      const limit = Math.min(Number(u.searchParams.get('limit') ?? 200) || 200, 500)
+      const mind = sched.mind ?? null
+      const store = sched.review?.store ?? null
+      json(res, 200, {
+        ok: true,
+        metering: (() => { try { return mind?.meteringStatus?.() ?? null } catch { return null } })(),
+        weekByRole: (() => { try { return mind?.metering?.weekByRole?.() ?? null } catch { return null } })(),
+        orchestration: (() => { try { return store?.listOrchestration?.(archiveKey, limit) ?? [] } catch { return [] } })(),
+        agendaVersions: (() => { try { return store?.listAgendaVersions?.() ?? [] } catch { return [] } })(),
+        injection: (() => { try { return mind?.injector?.stats?.({}) ?? null } catch { return null } })(),
+        memoryGuard: (() => { try { return mind?.attachMemoryGuard?.() ?? null } catch { return null } })(),
+        note: '博弈编排只读面（M3-T5）。编排全记录 append-only（BC-002：只插不改）；角色分项计量含 est 占比诚实披露（FR-046/R8）；议程版本清单=月报混杂声明数据源（FR-021）；剥离监听器=条件实装件如实披露（docs/33 §2.2 裁决 c）。本路由零写路径。',
+      })
+    })
+
     // ── 启动调度器 ─────────────────────────────────────────────────────────
     let sched = null
     try {

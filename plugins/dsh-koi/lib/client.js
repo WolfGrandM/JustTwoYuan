@@ -412,6 +412,44 @@ window.__ModuleLoader__.load({
         h("div", { className: "koi-hint" }, ui.REVIEW_HONESTY_NOTE));
     }
 
+    // ── M3 博弈卡片（M3-T5 / docs/33 §2.5 client.js 行）：编排记录查看 + 角色分项计量 + 议程版本 +
+    //    注入健康计数 + 计量模式披露。数据源 GET /dsh-koi/api/mind（只读路由）；零 LLM 输入（BC-001/
+    //    BC-014——本卡片零概率宣称）；编排记录 append-only 消费（BC-002）。
+    function MindArea() {
+      const [v, setV] = useState(null);
+      const [openRef, setOpenRef] = useState(null);
+      const load = useCallback(async () => {
+        try {
+          const r = await fetch(`${API}/mind`, { headers: { accept: "application/json" } });
+          const j = await r.json().catch(() => ({}));
+          if (j.ok) setV(j);
+        } catch { /* 下一轮再试 */ }
+      }, []);
+      useEffect(() => { load(); }, [load]);
+      const ui = exports.__uiLogic;
+      const roleLines = Object.entries(v?.weekByRole?.byRole ?? {});
+      const orch = v?.orchestration ?? [];
+      return h("div", null,
+        h("div", { className: "koi-sec-title" }, "计量模式（路径 A=宿主真实 usage 直采 / 路径 B=定额估算 est 恒标——诚实披露计量口径，docs/33 §2.4）"),
+        h("div", { className: "koi-hint" }, v?.metering ? `mode=${v.metering.mode} · 通道 stream=${v.metering.channels?.stream ? "✓" : "✗"} turnReplay=${v.metering.channels?.turnReplay ? "✓" : "✗"} tokenMeter=${v.metering.channels?.tokenMeter ? "✓" : "✗"}` : "（计量面缺席）"),
+        h("div", { className: "koi-sec-title" }, "角色分项周耗（FR-046：博弈类内按角色权重分项记账；weight 只记账解释不限额——分项闸门默认 null 关闭）"),
+        roleLines.length ? h("div", { className: "koi-events" }, roleLines.map(([role, b]) => h("div", { className: "koi-evt", key: role }, ui.mindRoleLine(role, b))))
+          : h("div", { className: "koi-hint" }, "（本周零编排调用——mind.enabled 开启后出号日 17:30 起按期记账）"),
+        h("div", { className: "koi-sec-title" }, `编排记录（orchestration_log 逐角色逐轮 append-only——BC-002 落盘先于开奖核对；最近 ${Math.min(orch.length, 12)} 条）`),
+        orch.length ? h("div", { className: "koi-events" }, orch.slice(-12).reverse().map((r) => h("div", { className: "koi-evt", key: r.id },
+          h("div", null, ui.mindOrchestrationLine(r), " · ",
+            h("a", { href: "#", style: { cursor: "pointer", color: "var(--dsw-alias-brand-primary,#4a9eff)" }, onClick: (ev) => { ev.preventDefault(); setOpenRef(openRef === r.id ? null : r.id); } }, openRef === r.id ? "收起全文" : "全文")),
+          openRef === r.id ? h("div", { className: "koi-out" }, String(r.content ?? "")) : null)))
+          : h("div", { className: "koi-hint" }, "（还没有编排记录——mind.enabled=true 且彩种档位非 single 时，出号日 17:30 起逐角色落档）"),
+        h("div", { className: "koi-sec-title" }, "议程版本（FR-021：模板常量在 git + roles.prompts 内容 hash；版本变更与因子库变更不得同期生效——月报自动声明）"),
+        (v?.agendaVersions ?? []).length ? h("div", { className: "koi-events" }, v.agendaVersions.slice(-8).map((x, i) => h("div", { className: "koi-evt", key: i }, ui.mindAgendaLine(x))))
+          : h("div", { className: "koi-hint" }, "（还没有议程版本登记——首次编排自动登记）"),
+        h("div", { className: "koi-sec-title" }, "注入健康计数（BC-004 候选过滤面：demoted/retired/candidate 永不入注）"),
+        h("div", { className: "koi-hint" }, ui.mindInjectionLine(v?.injection)),
+        h("div", { className: "koi-hint" }, v?.memoryGuard ? `剥离监听器：${v.memoryGuard.skipped === "not-implemented" ? "条件实装件（未装 dsh-auto-memory 不触发——接口位留空，docs/33 §2.2 裁决 c）" : JSON.stringify(v.memoryGuard).slice(0, 80)}` : ""),
+        h("div", { className: "koi-hint" }, ui.MIND_HONESTY_NOTE));
+    }
+
     // ── 配置面板六大区（§2.2.7）────────────────────────────────────────────────
     function ConfigPanel({ st, reload }) {
       const [cfg, setCfg] = useState(null);
@@ -479,13 +517,24 @@ window.__ModuleLoader__.load({
             } }),
             " 桌宠（harness 右下角通知小鱼）"),
           h("span", { className: "koi-hint" }, "关闭后事件仍见面板与渠道；重新勾选即恢复")),
-        // ② 角色数量（FZ-7 围栏：数量可配、提示词只读）
+        // ② 角色数量（FZ-7 围栏：数量可配；M3-T5 提示词编辑器开放——用户可改角色怎么想，
+        //    硬校验/基线/归因/推送契约/兜底结构代码锁定改不动；POST /api/config 既有路由承载）
         h("div", { className: "koi-sec-title" }, "② 角色数量"),
         h("div", { className: "koi-row" },
           "策略师：",
           h("select", { className: "koi-input", value: cfg.roles?.strategists ?? 1, onChange: (e) => patch({ "roles.strategists": Number(e.target.value) }) },
             [1, 2, 3, 4].map((n) => h("option", { key: n, value: n }, `${n} 位`))),
-          h("span", { className: "koi-hint" }, "数据官/质询者/主持人固定 1；任务提示词编辑随 M3 编排器开放（围栏外不可及）")),
+          h("span", { className: "koi-hint" }, "数据官/质询者/主持人固定 1；克隆数变化须与 budget.roleWeights.strategist 数组对齐（每策略师一份权重）")),
+        ["dataOfficer", "strategist", "provoker", "chair"].map((rk) => h("div", { className: "koi-row", key: rk },
+          h("textarea", { className: "koi-input", rows: 2, style: { width: "100%" },
+            placeholder: `${{ dataOfficer: "数据官", strategist: "策略师", provoker: "质询者", chair: "主持人" }[rk]}任务提示词覆盖（留空=内置默认；≤2000 字符）`,
+            defaultValue: String(cfg.roles?.prompts?.[rk] ?? ""),
+            onBlur: (e) => {
+              const v = String(e.target.value ?? "").trim();
+              const cur = String(cfg.roles?.prompts?.[rk] ?? "").trim();
+              if (v !== cur) patch({ [`roles.prompts.${rk}`]: v });
+            } }))),
+        h("div", { className: "koi-hint" }, "任务提示词编辑器（M3 编排器已开放）：可改角色怎么想——内置模板常驻 BC-001 诚实声明与交卷契约（代码拼装不可覆盖）；硬校验 / 随机基线 / 代码归因 / 推送契约 / 兜底标注为代码围栏锁定，提示词改不动（FZ-7）。改提示词会生成新议程版本号（agendaVersion），随条目 stamp 入档。"),
         // ③ 预算权重
         h("div", { className: "koi-sec-title" }, "③ 预算权重"),
         h("div", { className: "koi-row" },
@@ -644,6 +693,7 @@ window.__ModuleLoader__.load({
           h("div", { className: "koi-card" }, h(LearningArea)),
           h("div", { className: "koi-card" }, h(FactorArea)),
           h("div", { className: "koi-card" }, h(ReviewArea)),
+          h("div", { className: "koi-card" }, h(MindArea)),
           h("div", { className: "koi-card" }, h(ConfigPanel, { st, reload: load })),
           h("p", { className: "koi-intro" },
             "配置三入口等价：本面板 / 配置文件（路径见上） / CLI（koi.mjs config|mode|channels）；改完下一轮 tick 生效。",
@@ -826,7 +876,42 @@ window.__ModuleLoader__.load({
       /** 复盘卡片诚实注脚（BC-001 输出面） */
       const REVIEW_HONESTY_NOTE = '命中率只作与随机基线对照的观测值。周报/月报/告警经 TF-6 口径静默进面板事件列表（不推 QQ）；否决窗口过期后晋升不可回退（DC-004 单向边）。'
 
-      return { WIZARD_STEPS, wizardCanAdvance, wizardComplete, degradeDecision, unreadCount, winUnreadCount, verbosityChoice, bubbleTitle, LEARNING_COPY, UPLOAD_HINT, VERDICT_CALIBER, PENDING_LLM_NOTE, FULLBACKFILL_CONFIRM, SPORTTERY_DEEP_NOTE, rejectedNote, ruleDupHint, verdictTextOf, uploadFormatOk, formatBytes, uploadEstimate, backfillProgressText, jobBadgeText, PROMO_RED_HOURS, promoUrgency, promoLine, factorLine, healthLine, REVIEW_HONESTY_NOTE };
+      // ── M3-T5 博弈卡行格式化（纯函数，只读消费 /api/mind 载荷——零 LLM 输入，BC-001 输出面）──────
+
+      /** 博弈卡诚实注脚（BC-001 输出面 + FZ-7 围栏声明常驻） */
+      const MIND_HONESTY_NOTE = '博弈编排只做「多角色按议程开会」——闸（硬校验）、账（计量分项）、相位、档案四样结构全部代码锁定，提示词只能改角色怎么想、改不动纪律怎么算（FZ-7）；开奖是独立随机事件，编排不改变任何概率。'
+
+      /** 编排记录一行（orchestration_log append-only 只读消费；content 剔除行如实标注） */
+      function mindOrchestrationLine(r) {
+        if (!r) return ''
+        const content = String(r.content ?? '')
+        const head = `[${String(r.at ?? '').slice(0, 19).replace('T', ' ')}] ${r.role ?? '-'}#${r.round ?? '-'}（${r.callRef ?? '-'}）`
+        if (content.includes('超时剔除')) return `${head} —— 超时剔除（FR-019 如实入档）`
+        let flat = content.slice(0, 120)
+        try { flat = JSON.stringify(JSON.parse(content)).slice(0, 120) } catch { /* 非 JSON 原样截断 */ }
+        return `${head} ${flat}${content.length > 120 ? '…' : ''}`
+      }
+
+      /** 角色分项计量一行（weekByRole——tokens/步数/est 占比诚实披露 R8） */
+      function mindRoleLine(role, b) {
+        if (!b) return ''
+        const estPct = b.steps ? Math.round((b.estSteps / b.steps) * 100) : 0
+        return `${role}：${b.tokens} tokens · ${b.steps} 步 · est 占比 ${estPct}%（路径 B 定额兜底条目占比——诚实披露计量口径）`
+      }
+
+      /** 议程版本一行（agenda_versions——FR-021 月报混杂声明数据源） */
+      function mindAgendaLine(v) {
+        if (!v) return ''
+        return `${v.version} · 登记于 ${String(v.activatedAt ?? '').slice(0, 19).replace('T', ' ')}${v.retiredAt ? ` · 退役 ${String(v.retiredAt).slice(0, 19).replace('T', ' ')}` : ''}`
+      }
+
+      /** 注入健康计数一行（injector.stats——BC-004 过滤面可观测） */
+      function mindInjectionLine(s) {
+        if (!s) return '（注入统计缺席——如实展示）'
+        return `可注入因子 ${s.injectable ?? 0} 个（observing/promoted）· 过滤排除 ${s.excluded ?? 0} 个（candidate ${s.excludedReasons?.candidate ?? 0}/demoted ${s.excludedReasons?.demoted ?? 0}/retired ${s.excludedReasons?.retired ?? 0}——BC-004 永不回注）`
+      }
+
+      return { WIZARD_STEPS, wizardCanAdvance, wizardComplete, degradeDecision, unreadCount, winUnreadCount, verbosityChoice, bubbleTitle, LEARNING_COPY, UPLOAD_HINT, VERDICT_CALIBER, PENDING_LLM_NOTE, FULLBACKFILL_CONFIRM, SPORTTERY_DEEP_NOTE, rejectedNote, ruleDupHint, verdictTextOf, uploadFormatOk, formatBytes, uploadEstimate, backfillProgressText, jobBadgeText, PROMO_RED_HOURS, promoUrgency, promoLine, factorLine, healthLine, REVIEW_HONESTY_NOTE, MIND_HONESTY_NOTE, mindOrchestrationLine, mindRoleLine, mindAgendaLine, mindInjectionLine };
     })();
     // <<< END GENERATED
 

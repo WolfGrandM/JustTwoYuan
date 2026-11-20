@@ -92,6 +92,11 @@ test('等价门③：全部函数同夹具对照（每夹具两侧各调一次�
     ['promoLine', [[{ id: 'f-x', name: '奇偶比', hoursLeft: 12.34, effectiveAt: 'T0' }], [{}], [null]]],
     ['factorLine', [[{ id: 'f-y', status: 'promoted', version: 2 }], [{ id: 'f-z', status: 'observing', version: 1 }], [{}], [null]]],
     ['healthLine', [[{ name: '满配率', ok: null, detail: 'N/A' }], [{ name: '未结清', ok: false, detail: '红：1 期' }], [{ name: '降级次数', ok: true, detail: '0 次' }], [{}], [null]]],
+    // M3-T5 博弈卡行格式化（只读消费 /api/mind 载荷；剔除行如实标注/est 占比披露/BC-004 过滤计数）
+    ['mindOrchestrationLine', [[null], [{ at: '2026-10-25T17:31:00.000Z', role: 'chair', round: 2, callRef: 'p3|26283#chair-2', content: '{"picks":{"digits":[6,4,7]}}' }], [{ at: 'x', role: 'chair', round: 1, content: '（超时剔除——FR-019 单角色容错，剩余继续）' }], [{ content: '非 JSON 文本' }], [{}]]],
+    ['mindRoleLine', [['chair', { tokens: 600, steps: 2, estSteps: 1 }], ['chair', { tokens: 0, steps: 0, estSteps: 0 }], ['x', {}], ['x', null], [null, null]]],
+    ['mindAgendaLine', [[{ version: 'm3:v1:aaaaaaaa', activatedAt: '2026-10-25T17:30:00.000Z', retiredAt: null }], [{ version: 'm3:v1:bbbbbbbb', activatedAt: 'x', retiredAt: 'y' }], [{}], [null]]],
+    ['mindInjectionLine', [[{ injectable: 4, excluded: 3, excludedReasons: { candidate: 1, demoted: 1, retired: 1 } }], [{}], [undefined], [null]]],
   ]
   // 覆盖完备性：除豁免外，权威源的每个函数导出都必须出现在对照表里（防新增函数漏夹具）
   const fnKeys = comparedKeys.filter((k) => typeof ui[k] === 'function').sort()

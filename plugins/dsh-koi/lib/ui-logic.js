@@ -199,3 +199,38 @@ export function healthLine(i) {
 
 /** 复盘卡片诚实注脚（BC-001 输出面） */
 export const REVIEW_HONESTY_NOTE = '命中率只作与随机基线对照的观测值。周报/月报/告警经 TF-6 口径静默进面板事件列表（不推 QQ）；否决窗口过期后晋升不可回退（DC-004 单向边）。'
+
+// ── M3-T5 博弈卡行格式化（纯函数，只读消费 /api/mind 载荷——零 LLM 输入，BC-001 输出面）──────
+
+/** 博弈卡诚实注脚（BC-001 输出面 + FZ-7 围栏声明常驻） */
+export const MIND_HONESTY_NOTE = '博弈编排只做「多角色按议程开会」——闸（硬校验）、账（计量分项）、相位、档案四样结构全部代码锁定，提示词只能改角色怎么想、改不动纪律怎么算（FZ-7）；开奖是独立随机事件，编排不改变任何概率。'
+
+/** 编排记录一行（orchestration_log append-only 只读消费；content 剔除行如实标注） */
+export function mindOrchestrationLine(r) {
+  if (!r) return ''
+  const content = String(r.content ?? '')
+  const head = `[${String(r.at ?? '').slice(0, 19).replace('T', ' ')}] ${r.role ?? '-'}#${r.round ?? '-'}（${r.callRef ?? '-'}）`
+  if (content.includes('超时剔除')) return `${head} —— 超时剔除（FR-019 如实入档）`
+  let flat = content.slice(0, 120)
+  try { flat = JSON.stringify(JSON.parse(content)).slice(0, 120) } catch { /* 非 JSON 原样截断 */ }
+  return `${head} ${flat}${content.length > 120 ? '…' : ''}`
+}
+
+/** 角色分项计量一行（weekByRole——tokens/步数/est 占比诚实披露 R8） */
+export function mindRoleLine(role, b) {
+  if (!b) return ''
+  const estPct = b.steps ? Math.round((b.estSteps / b.steps) * 100) : 0
+  return `${role}：${b.tokens} tokens · ${b.steps} 步 · est 占比 ${estPct}%（路径 B 定额兜底条目占比——诚实披露计量口径）`
+}
+
+/** 议程版本一行（agenda_versions——FR-021 月报混杂声明数据源） */
+export function mindAgendaLine(v) {
+  if (!v) return ''
+  return `${v.version} · 登记于 ${String(v.activatedAt ?? '').slice(0, 19).replace('T', ' ')}${v.retiredAt ? ` · 退役 ${String(v.retiredAt).slice(0, 19).replace('T', ' ')}` : ''}`
+}
+
+/** 注入健康计数一行（injector.stats——BC-004 过滤面可观测） */
+export function mindInjectionLine(s) {
+  if (!s) return '（注入统计缺席——如实展示）'
+  return `可注入因子 ${s.injectable ?? 0} 个（observing/promoted）· 过滤排除 ${s.excluded ?? 0} 个（candidate ${s.excludedReasons?.candidate ?? 0}/demoted ${s.excludedReasons?.demoted ?? 0}/retired ${s.excludedReasons?.retired ?? 0}——BC-004 永不回注）`
+}

@@ -61,10 +61,11 @@ const EXISTING_12 = [
   '/dsh-koi/api/backbone/full', '/dsh-koi/api/backbone/stop', '/dsh-koi/api/ingest', '/dsh-koi/api/backtest',
 ]
 
-test('T6 路由面：既有 12 路由逐位在位 + 新增 GET /api/review（13 条；其余零新增）', () => {
+test('T6 路由面：既有 12 路由逐位在位 + GET /api/review（M4）+ GET /api/mind（M3-T5）= 14 条；其余零新增', () => {
   for (const p of EXISTING_12) assert.ok(routes.has(p), `既有路由缺失：${p}`)
-  assert.ok(routes.has('/dsh-koi/api/review'), '新路由在位')
-  assert.equal(routes.size, 13, `既有 12 + review = 13（实际 ${routes.size}）`)
+  assert.ok(routes.has('/dsh-koi/api/review'), 'M4 复盘路由在位')
+  assert.ok(routes.has('/dsh-koi/api/mind'), 'M3 博弈只读路由在位（FZ-6 加法通道）')
+  assert.equal(routes.size, 14, `既有 12 + review + mind = 14（实际 ${routes.size}）`)
 })
 
 test('T6 GET /api/review：只读面（报告/因子库/健康节/pendingPromotions/usageWeeks）；非回环 403；POST 405', async () => {
