@@ -173,7 +173,8 @@ export function demotionFor({ used, cap, warn1 = 0.7, warn2 = 0.9, effortTier = 
 const EMPTY_PACK_CHARS = { ssq: 2200, dlt: 2600, p3: 800 }   // 空库估计（MD-17；§4.2「30 期×平均行宽估」）
 const ADVISORY_IN_CHARS = 600   // 判据 JSON + 档表 + 预算余量的提示词规模估计
 const ADVISORY_OUT_CHARS = 200
-const M3_MULTIPLIER_BASE = 3    // 数据官/质询者/主持人各 1 次基线调用（MD-16）
+const M3_MULTIPLIER_BASE = 3    // （M3-T4 前口径）数据官/质询者/主持人各 1 次基线调用（MD-16）
+const M3_INTERVIEW_ROUND = 1    // （M3-T4 起口径）互评/质询轮权重——逐角色权重 + 互评轮取代「2×策略师和 + 3」
 
 function autoGames(cfg) {
   return GAME_ORDER.filter((k) => cfg?.modes?.[k]?.mode === 'auto')
@@ -199,10 +200,19 @@ export function costEstimate(cfg, { packChars = {} } = {}) {
     perCall.advisory = { input: Math.ceil(ADVISORY_IN_CHARS / 4), output: Math.ceil(ADVISORY_OUT_CHARS / 4) }
     for (const g of autoGames(cfg)) weekly.advisory += GAMES[g].drawDays.length * (perCall.advisory.input + perCall.advisory.output)
   }
-  const weights = Array.isArray(cfg?.budget?.roleWeights?.strategist) && cfg.budget.roleWeights.strategist.length
-    ? cfg.budget.roleWeights.strategist.map(Number).filter((w) => w > 0)
+  // M3-T4：m3Projection 对齐 roleWeights 新结构（{dataOfficer, strategist:[…], provoker, chair}——
+  // 拍板 P15 草案 1.0/[1.0,1.0]/0.8/1.5；旧结构 {strategist:[…]} 兼容——缺省角色按草案默认值）。
+  // 只作成本投影权重（§5.3：记账可解释，不产生预算闸门差异）；MD-16 口径更新=逐角色权重 + 互评轮 1。
+  const rwRaw = cfg?.budget?.roleWeights ?? {}
+  const sWeights = Array.isArray(rwRaw.strategist) && rwRaw.strategist.length
+    ? rwRaw.strategist.map(Number).filter((w) => w > 0)
     : [1.0]
-  const m3Factor = 2 * weights.reduce((a, b) => a + b, 0) + M3_MULTIPLIER_BASE   // MD-16：每策略师提案×权重 + 互评轮 + 三基线角色
+  const rNum = (v, dflt) => (Number(v) > 0 ? Number(v) : dflt)
+  const m3Factor = rNum(rwRaw.dataOfficer, 1.0)
+    + sWeights.reduce((a, b) => a + b, 0)
+    + rNum(rwRaw.provoker, 0.8)
+    + rNum(rwRaw.chair, 1.5)
+    + M3_INTERVIEW_ROUND   // 互评/质询轮（MD-16；现状「2×策略师和 + 3 基线角色」口径随 M3 编排器落地改逐角色权重）
   const weeklyCap = Number(cfg?.budget?.weeklyCap) > 0 ? Number(cfg.budget.weeklyCap) : 1_500_000
   const total = weekly.predict + weekly.advisory
   return {
@@ -220,7 +230,7 @@ export function costEstimate(cfg, { packChars = {} } = {}) {
       weeklyTotal: total,
     },
     m3Projection: {
-      note: 'M3 满配投影（每策略师一次提案×权重 + 互评轮 + 数据官/质询者/主持人基线；随阵容/权重变化，随 M3 编排器生效）',
+      note: 'M3 满配投影（逐角色权重加权：数据官+策略师×N+质询者+主持人 + 互评轮——roleWeights 新结构对齐，随阵容/权重变化，随 M3 编排器生效）',
       factor: Number(m3Factor.toFixed(2)),
       weeklyPredict: Math.round(weekly.predict * m3Factor),
     },

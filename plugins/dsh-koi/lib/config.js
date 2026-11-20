@@ -29,8 +29,8 @@ export function buildConfigTemplate() {
     time: { catchUpEnd: '19:50', settleAt: '22:00', settleGiveUp: '23:30', retryMinutes: 5, heartbeatAt: '22:30' },
     budget: {
       weeklyCap: 1_500_000, warn1: 0.7, warn2: 0.9,
-      categories: { predict: null, learning: null, advisory: null },
-      roleWeights: { strategist: [1.0] },
+      categories: { predict: null, learning: null, advisory: null, deliberation: null },   // M3-T4（docs/33 §2.5 config 行②/§5.2）：deliberation=博弈编排分项（默认 null=不启用分项闸门——FR-047 首月实测后回填，诚实起步不拍脑袋）
+      roleWeights: { dataOfficer: 1.0, strategist: [1.0, 1.0], provoker: 0.8, chair: 1.5 },   // M3-T4（docs/33 §5.3 草案，拍板 P15）：主持人合成定稿输出最大 1.5 / 数据官输入大输出小 1.0 / 质询者短质询轮 0.8 / 策略师按克隆数等权展开；只作记账分项与成本投影权重，不产生预算闸门差异（分项闸门默认 null 关闭）——主人可推翻，推翻成本=改一处配置默认
       overrides: { injectionCap: 4000, perCallCap: null },
     },
     cast: { tiers: {} },   // M3-T2（docs/33 §2.5 config 行①）：彩种编排档位覆盖（空=默认映射 ssq/dlt='standard'、p3/3d='lite'——拍板 P15 3d 轻量对称；值域 full/standard/lite/single，校验见 validateConfig）
@@ -145,6 +145,31 @@ export function validateConfig(cfg) {
     if (b[f] !== undefined && !(Number(b[f]) > 0 && Number(b[f]) < 1)) err(`budget.${f} 必须在 (0,1)`)
   }
   if (b.warn1 != null && b.warn2 != null && !(Number(b.warn1) < Number(b.warn2))) err('budget.warn1 必须小于 warn2')
+  // budget.categories（M3-T4：deliberation 分项键——null 或正数；既有 predict/learning/advisory 三键语义零改动）
+  const cats = b.categories
+  if (cats !== undefined) {
+    if (cats == null || typeof cats !== 'object' || Array.isArray(cats)) err('budget.categories 必须是对象')
+    else for (const k of ['predict', 'learning', 'advisory', 'deliberation']) {
+      if (cats[k] !== undefined && cats[k] !== null && !(Number(cats[k]) > 0)) err(`budget.categories.${k} 必须为 null（不启用分项闸门）或大于 0`)
+    }
+  }
+  // budget.roleWeights（M3-T4 docs/33 §2.5 config 行③/§5.3 草案）：非负数；strategist 数组按克隆数
+  // 展开——对齐校验方向=「数组须覆盖 roles.strategists 克隆数」（不足才拒；更长允许=预配满配克隆，
+  // 消费面按索引取用）——草案 [1.0,1.0] 对应 N=2 与出厂 N=1 并存合法（出厂只用前 1 份权重）
+  const rw = b.roleWeights
+  if (rw !== undefined) {
+    if (rw == null || typeof rw !== 'object' || Array.isArray(rw)) err('budget.roleWeights 必须是对象')
+    else {
+      for (const k of ['dataOfficer', 'provoker', 'chair']) {
+        if (rw[k] !== undefined && !(Number(rw[k]) >= 0)) err(`budget.roleWeights.${k} 必须是非负数`)
+      }
+      if (rw.strategist !== undefined) {
+        if (!Array.isArray(rw.strategist)) err('budget.roleWeights.strategist 必须是数组（每策略师权重，按克隆数展开）')
+        else if (rw.strategist.some((w) => !(Number(w) >= 0))) err('budget.roleWeights.strategist 各项必须是非负数')
+        else if (Number(cfg.roles?.strategists ?? 1) > rw.strategist.length) err(`budget.roleWeights.strategist 数组长度（${rw.strategist.length}）须覆盖 roles.strategists 克隆数（${cfg.roles?.strategists ?? 1}）——每策略师一份权重`)
+      }
+    }
+  }
 
   // cast.tiers（M3-T2 docs/33 §2.5 config 行④：彩种编排档位覆盖，值域 CAST_TIERS——本地常量
   // 与 lib/mind/agenda.js CAST_TIERS 同域（config 层不反向 import mind 层），非法值即拒）

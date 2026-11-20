@@ -289,13 +289,17 @@ export function createOrchestrator({
     return { via: 'skip', skip: { code: 'tier-exhausted', reason: '降档重跑上限到达' }, castTier: 'single', planTier, agendaVersion, roles: rolesOf(produced), strippedRoles, injectionNote, rounds }
   }
 
-  /** planTierOf 拉前条件输入（周降档计数/周用量占比——scheduler 注入 budgetState 可算，缺省关闭拉前） */
+  /** planTierOf 输入（拉前条件 + M3-T4 分项超限信号——scheduler 注入 budgetState 可算，缺省关闭拉前） */
   function planInputsOf(cfg) {
     try {
       const t = budgetState ? budgetState(cfg) : null
       const cap = Number(cfg?.budget?.weeklyCap) > 0 ? Number(cfg.budget.weeklyCap) : 1_500_000
-      return { demotionFreeWeeks: 0, weekRatio: t ? t.totals.total / cap : 1 }   // demotionFreeWeeks 周 streak 属运行期统计——首月回填（FR-047），默认 0 = 拉前门关
-    } catch { return { demotionFreeWeeks: 0, weekRatio: 1 } }
+      return {
+        demotionFreeWeeks: 0,   // demotionFreeWeeks 周 streak 属运行期统计——首月回填（FR-047），默认 0 = 拉前门关
+        weekRatio: t ? t.totals.total / cap : 1,
+        subOver: t?.sub?.over === true,   // M3-T4：categories.deliberation 设值且分项超限 → planTier 下压一档（§5.2）
+      }
+    } catch { return { demotionFreeWeeks: 0, weekRatio: 1, subOver: false } }
   }
 
   /** 已成功参与角色集（去重保序） */

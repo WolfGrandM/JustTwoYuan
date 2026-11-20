@@ -47,12 +47,16 @@ export function nextTier(tier) {
  * 计划档位（FR-017 拉前条件 / FR-033 告警基准 DC-001）：连续 4 周无降级 且 周 token<70% → 'full'，
  * 否则计划档 = 配置档（castTierOf 含 mind 闸）。full 未解锁期间 standard 即计划档位（§3.1 market
  * 版口径注记——设计内差值不告警）。
+ * M3-T4 分项判定（FR-046/§5.2）：budget.categories.deliberation 设值且本周博弈分项超限（subOver）
+ * → 计划档下压一档（博弈降档提示——预算压力收敛到「分项超限降档」，周级 effort 降档不受影响，
+ * 两级互不覆盖 §3.3）；null（默认）= 不启用分项，subOver 恒 false 零行为（回归保真）。
  */
-export function planTierOf(cfg, gameKey, { demotionFreeWeeks = 0, weekRatio = 1 } = {}) {
+export function planTierOf(cfg, gameKey, { demotionFreeWeeks = 0, weekRatio = 1, subOver = false } = {}) {
   const configured = castTierOf(cfg, gameKey)
-  if (configured === 'full') return 'full'
-  if (configured === 'standard' && Number(demotionFreeWeeks) >= 4 && Number(weekRatio) < 0.7) return 'full'
-  return configured
+  let plan = configured
+  if (configured === 'standard' && Number(demotionFreeWeeks) >= 4 && Number(weekRatio) < 0.7) plan = 'full'
+  if (subOver && plan !== 'single') plan = nextTier(plan) ?? 'single'   // 先拉前再下压（预算硬护栏优先于拉前；中途只降不升）
+  return plan
 }
 
 /** 满配解锁拉前条件常量（FR-017 原文口径，单点供配置面/周报引用） */
