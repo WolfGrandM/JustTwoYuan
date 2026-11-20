@@ -24,8 +24,18 @@ const STALE_DAYS = 7            // B-24：未结清报红线（given-up 且 >7 �
 const FALLBACK_STREAK = 3       // 触发器②：连续 3 期兜底
 const LLM_PENDING_MIN = 2       // 触发器③：pending-llm ≥2 任务
 const NO_MODEL_GAMES_MIN = 2    // 触发器③：no-model 错误彩种数 ≥2
+const TIER_SEQ = ['full', 'standard', 'lite', 'single']   // M3-T4：阵容档位序（agenda.js CAST_TIERS 同域——health 层不反向 import mind 层）
+const TIER_BELOW_PLAN_STREAK = 3   // 触发器①：连续 3 期实际档低于计划档
 
 const effortIdx = (t) => EFFORT_ORDER.indexOf(t)
+const tierIdx = (t) => TIER_SEQ.indexOf(String(t ?? ''))
+/** 本 ISO 周一（「本周」窗口——满配率/注入均值实算口径；weekKey 同款 ISO 定义本地实现，零反向 import weekly） */
+const mondayOf = (d) => {
+  const x = new Date(`${d}T12:00:00`)
+  const dow = x.getDay()
+  x.setDate(x.getDate() + (dow === 0 ? -6 : 1 - dow))
+  return x.toLocaleDateString('sv-SE')
+}
 
 /**
  * 健康扫描（纯判定，零副作用）。
@@ -46,8 +56,19 @@ export function scanHealth({ readPreds, readCfg = () => ({}), store = null, toda
   const items = []
   const alerts = []
 
-  // ① 满配率 → N/A（M3 未建，如实标注不虚构）
-  items.push({ name: '满配率', ok: null, detail: 'N/A（编排器与满配档属 M3，未建）' })
+  // ① 满配率（M3-T4 转实算，docs/33 §2.5 weekly 行）：本周达到计划档位期数占比——stamp.castTier×
+  //    planTier 对照（castTier 序号 ≤ planTier 序号 = 实际档不低于计划档）；无 stamp 条目如实 N/A。
+  //    注：FR-1006「用户档位=其配置阵容的满配」——计划档位已含拉前判定，此处只数「达标与否」。
+  const thisWeek = entries.filter((e) => e.date && String(e.date) >= mondayOf(today))
+  const planStamped = thisWeek.filter((e) => tierIdx(e.planTier) >= 0 && tierIdx(e.castTier) >= 0)
+  const metPlan = planStamped.filter((e) => tierIdx(e.castTier) <= tierIdx(e.planTier)).length
+  items.push({
+    name: '满配率',
+    ok: planStamped.length ? metPlan === planStamped.length : null,
+    detail: planStamped.length
+      ? `本周编排 ${planStamped.length} 期 · 达到计划档位 ${metPlan} 期（${Math.round((metPlan / planStamped.length) * 100)}%——castTier×planTier stamp 对照，M3-T4 实算）`
+      : 'N/A（本周无编排 stamp 条目——mind 关或未出号，如实标注）',
+  })
 
   // ② 降级次数：本年条目 effortTier 序列降档事件计数（turbo→standard→economy→follow-host 方向）
   const yearEntries = entries.filter((e) => e.date && String(today).slice(0, 4) === String(e.date).slice(0, 4))
@@ -73,8 +94,17 @@ export function scanHealth({ readPreds, readCfg = () => ({}), store = null, toda
     }
   }
 
-  // ④ 注入均值 → N/A（M3 未建）
-  items.push({ name: '注入均值', ok: null, detail: 'N/A（注入层属 M3，未建）' })
+  // ④ 注入均值（M3-T4 转实算，docs/33 §2.5 weekly 行）：本周编排条目注入失败期数均摊——
+  //    injectionNote stamp 在位 = 注入失败/降级面（FR-031 档案标注）；成功占比 + 失败明细如实。
+  const orchThisWeek = thisWeek.filter((e) => ['full', 'standard', 'lite'].includes(e.castTier))
+  const injFail = orchThisWeek.filter((e) => typeof e.injectionNote === 'string' && e.injectionNote.trim()).length
+  items.push({
+    name: '注入均值',
+    ok: orchThisWeek.length ? injFail === 0 : null,
+    detail: orchThisWeek.length
+      ? `本周编排 ${orchThisWeek.length} 期 · 注入失败 ${injFail} 期（injectionNote 在位）· 成功占比 ${Math.round(((orchThisWeek.length - injFail) / orchThisWeek.length) * 100)}%（M3-T4 实算）`
+      : 'N/A（本周无编排条目，如实标注）',
+  })
 
   // ④b 注入连续失败计数（M3-T3 接线，FR-031/AC-028 触发器③转实算）：每彩种最近 2 条 daily 条目
   // 均带 injectionNote（FR-031 档案标注 = 注入失败面）→ 连续 ≥2 期并入告警（阈值 FR-033 原文）。
@@ -139,8 +169,30 @@ export function scanHealth({ readPreds, readCfg = () => ({}), store = null, toda
     alerts.push({ type: 'llm-channel', level: 'warn', detail: `${noModelGames} 个彩种出号报 no-model 错误（触发器③映射：LLM 通道连续异常）` })
   }
 
-  // ⑨ 档位计划（触发器①）→ N/A（§9-R2：stamp 无计划档位字段，随 M3 启用）
-  items.push({ name: '档位·计划对照', ok: null, detail: 'N/A（stamp 无计划档位字段；随 M3 编排器接入补 stamp.plannedTier 后启用）' })
+  // ⑨ 档位·计划对照（M3-T4 触发器①转实算，docs/28 §9-R2 预告的 stamp.plannedTier 落点=T2 planTier
+  //    stamp 已落纸——本批消费）：castTier 序号 > planTier 序号（实际档低于计划档）连续 3 期 per 彩种
+  //    → 告警；设计内差值不告警（planTier 已是拉前判定后的计划档——§3.1 口径；effortTier 降档不算，
+  //    判定基准=阵容维度 castTier vs planTier，R11 单点裁决）。
+  const belowPlanGames = []
+  for (const game of ['ssq', 'dlt', 'p3']) {
+    const last3 = entries.filter((e) => e.game === game && tierIdx(e.planTier) >= 0 && tierIdx(e.castTier) >= 0).slice(-3)
+    if (last3.length >= TIER_BELOW_PLAN_STREAK
+      && last3.every((e) => tierIdx(e.castTier) > tierIdx(e.planTier))) {
+      belowPlanGames.push(game)
+      alerts.push({
+        type: 'tier-below-plan', level: 'warn', game,
+        detail: `${game} 连续 ${TIER_BELOW_PLAN_STREAK} 期实际档位低于计划档位（${last3.map((e) => `${e.castTier}<${e.planTier}`).join('、')}）——FR-033 触发器①实算（M3-T4，planTier stamp 消费）`,
+      })
+    }
+  }
+  const belowPlanTotal = entries.filter((e) => tierIdx(e.planTier) >= 0 && tierIdx(e.castTier) >= 0 && tierIdx(e.castTier) > tierIdx(e.planTier)).length
+  items.push({
+    name: '档位·计划对照',
+    ok: belowPlanGames.length ? false : true,
+    detail: belowPlanGames.length
+      ? `红：${belowPlanGames.join('、')} 连续 ${TIER_BELOW_PLAN_STREAK} 期低于计划（历史累计 ${belowPlanTotal} 期）`
+      : `无连续 ${TIER_BELOW_PLAN_STREAK} 期低于计划（历史累计 ${belowPlanTotal} 期降档；设计内差值不告警——M3-T4 实算）`,
+  })
 
   return { items, alerts }
 }

@@ -195,11 +195,12 @@ test('costEstimate 双显示（MB-22）：当前形态不随阵容 / M3 满配�
   assert.equal(est.weekly.predict, 3 * ssqPer + 7 * p3Per, 'manual 彩种不计入')
   assert.ok(est.weekly.advisory > 0, 'advisory 默认开')
   assert.equal(est.weekly.cap, 1_500_000)
-  // 双显示：当前形态不随阵容；M3 满配 = 2×Σweights+3 = 7 倍
+  // 双显示：当前形态不随阵容；M3 满配（M3-T4 逐角色权重口径）= dataOfficer 1.0 + Σstrategist 2.0
+  // + provoker 0.8 + chair 1.5 + 互评轮 1 = 6.3 倍（旧结构 {strategist:[…]} 兼容——缺省角色按草案默认）
   assert.ok(est.currentForm.note.includes('不随阵容'))
   assert.ok(est.m3Projection.note.includes('M3'))
-  assert.equal(est.m3Projection.factor, 7)
-  assert.equal(est.m3Projection.weeklyPredict, est.weekly.predict * 7)
+  assert.equal(est.m3Projection.factor, 6.3)
+  assert.equal(est.m3Projection.weeklyPredict, Math.round(est.weekly.predict * 6.3))
   // advisory 关闭 → 0
   const est2 = costEstimate({ ...cfg, advisory: { enabled: false } }, { packChars: { ssq: 2400, p3: 800 } })
   assert.equal(est2.weekly.advisory, 0)

@@ -315,6 +315,10 @@ export function startKoiScheduler(ctx, opts) {
   }
 
   // ── 预算与降档链（BC-013 市场版链 + BC-107）──────────────────────────────────
+  // M3-T4 扩展（FR-046/§5.2）：deliberation 桶并入 totals.total（weekTotals 加法自动并入——硬顶
+  // 判定覆盖全部活动，口径不变）；budget.categories.deliberation 设值（非 null）→ 增判博弈分项
+  // 超限（sub.over）→ 编排 planTier 下压一档（agenda.planTierOf subOver 消费）；null = 不启用
+  // 分项（默认——FR-047 首月实测回填，诚实起步）。categories 既有三键语义零改动。
   function budgetState(cfg) {
     const totals = usage.weekTotals()
     const demo = demotionFor({
@@ -323,7 +327,13 @@ export function startKoiScheduler(ctx, opts) {
       warn1: cfg?.budget?.warn1 ?? 0.7, warn2: cfg?.budget?.warn2 ?? 0.9,
       effortTier: cfg?.effort?.tier ?? 'follow-host',
     })
-    return { totals, demo }
+    let sub = null
+    const subCap = Number(cfg?.budget?.categories?.deliberation)
+    if (subCap > 0) {
+      const used = Number(totals.deliberation ?? 0)
+      sub = { key: 'deliberation', used, cap: subCap, over: used >= subCap, ratio: Number((used / subCap).toFixed(4)) }
+    }
+    return { totals, demo, sub }
   }
 
   // ── M3-T3 记忆注入装配（docs/33 §2.2 injector.js 行 / §4.4）：RAG-lite 两块（活跃因子+30 期
@@ -886,6 +896,33 @@ export function startKoiScheduler(ctx, opts) {
         saveState()
       }
       }   // ← !holiday（休市日静默顺延：出号段/对账段/致歉/心跳全部跳过）
+
+      // ── 预算预警段（M3-T4 FR-046/S-016：70%/90%/触顶推送告知——不只进日志；kind='alert' 既有
+      //    零新增 kind；沿检测幂等 state.budgetLevelOn（每态各发一次）；自然周重置回落 ok 时发一条
+      //    恢复通知；全域生效不随休市门控——预算是全局护栏）。R7 渠道面：默认全渠道（FR-046 P0 原文
+      //    语义——预算是硬护栏，静默=护栏失效；窄口径改 panelOnly 属主人待拍板项 docs/33 §9-R7）。──
+      {
+        const { demo: dNow } = budgetState(cfg)
+        const level = dNow.level
+        if (state.budgetLevelOn !== level) {
+          const prev = state.budgetLevelOn ?? null
+          state.budgetLevelOn = level
+          saveState()
+          const pct = Math.round((Number(dNow.ratio ?? 0)) * 100)
+          const msgs = {
+            warn1: `⚠️ 锦鲤周预算预警：本周 token 用量已达 ${pct}%（≥70% 预警线）。力度与档位暂不动，先记账观察。`,
+            warn2: `⚠️ 锦鲤周预算预警：本周 token 用量已达 ${pct}%（≥90%）——思考力度已自动降一档（BC-013 链），博弈编排照常（预算压力收敛到力度降档+分项预警，§3.3 两级互不覆盖）。`,
+            cap: `🛑 锦鲤周预算触顶：本周 token 用量已达 ${pct}%（≥100%）——兜底档出号零 LLM、学习/建议暂停，等自然周重置或在面板调高周预算。`,
+          }
+          const body = level === 'ok'
+            ? (prev && prev !== 'ok' ? `🐟 锦鲤周预算回落：本周用量已回到预警线下（${pct}%），降档与暂停全部恢复。` : null)
+            : (msgs[level] ?? `锦鲤预算状态 ${level}（${pct}%）`)
+          if (body) {
+            await emitNotify({ kind: 'alert', message: body, flags: { budget: true } })
+            log(`[koi] 预算预警沿：${prev ?? '∅'} → ${level}（${pct}%）——推送 1 条（幂等至状态变化）`)
+          }
+        }
+      }
 
       // ── 复盘段（M4：mind.enabled 总闸；tick 内串行 await 保 events.json 单写者——§2.3②）──
       await reviewTickView({ today }).catch((e) => log('[koi] 复盘段异常：' + String(e?.message ?? e).slice(0, 160)))

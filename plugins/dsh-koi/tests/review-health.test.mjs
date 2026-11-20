@@ -69,10 +69,11 @@ test('T2 触发器③映射：pending-llm ≥2 或 no-model 彩种 ≥2 告警�
   assert.equal(r2.alerts.some((a) => a.type === 'llm-channel'), false, '各 1 → 不告警')
   const r3 = scanHealth({ ...base, signals: { pendingLlm: 0, noModelGames: 2 } })
   assert.ok(r3.alerts.some((a) => a.type === 'llm-channel' && /no-model/.test(a.detail)))
-  // 触发器①：N/A（§9-R2 stamp 无计划档位字段）
+  // 触发器①：M3-T4 转实算（planTier stamp 消费）——空数据 → 无连续降档 ok:true，如实标注零 stamp 条目
+  //（①满配率/④注入均值 空数据仍如实 N/A——本周无编排条目）
   const item = r1.items.find((i) => i.name === '档位·计划对照')
-  assert.equal(item.ok, null)
-  assert.match(item.detail, /N\/A/)
+  assert.equal(item.ok, true)
+  assert.match(item.detail, /M3-T4 实算/)
   assert.ok(r1.items.find((i) => i.name === '满配率').detail.includes('N/A'))
   assert.ok(r1.items.find((i) => i.name === '注入均值').detail.includes('N/A'))
 })
