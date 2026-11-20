@@ -227,6 +227,24 @@ test('白名单 v1.2 ②：ssq/dlt 维持唯一 won===true 不豁免；BRIDGE_FE
   assert.equal(stub.calls.length, 3, '未中奖两例零新增 HTTP')
 })
 
+test('白名单 v1.2 ②·3d：福彩3D near-miss 战果上气泡（docs/31 §6 第二批：judgeNearMiss 生效门扩 p3/3d → 谓词对 3d 自动覆盖，零改触发代码）', async () => {
+  const stub = petStub()
+  const { bridge } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub)
+  const ev = nmEvent({
+    game: '3d', issue: '2026322',
+    body: '🎰【锦鲤战果 · 福彩3D · 第 2026322 期】\n本回合计：中 0 元\n气死气死！我们押的 607，开奖 067——三个数字一个不差，顺序全拧了！直选没奖，账本老老实实记 0 元。',
+  })
+  assert.deepEqual(await bridge.onEvent(ev), { fed: true }, '3d NM-1 放行（won=false + nearMiss 存在，game 无关白名单门）')
+  assert.equal(stub.calls.length, 3, 'lock→broadcast→release 全序不变')
+  const fedText = JSON.parse(stub.calls[1].body).text
+  assert.ok(fedText.includes('福彩3D'), 'gameName=福彩3D 进气泡文本')
+  assert.ok(fedText.includes('三个数字一个不差，顺序全拧了'), '§4.3 NM-1 特征')
+  const stub2 = petStub()
+  const { bridge: b2 } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub2)
+  const ev2 = nmEvent({ game: '3d', won: true, body: '🎰【锦鲤战果 · 福彩3D · 第 2026322 期】\n本回合计：中 1040 元' })
+  assert.deepEqual(await b2.onEvent(ev2), { fed: true }, '3d won=true 战果走原路径（①行全彩种不变）')
+})
+
 test('白名单 v1.2 ②联动：红点/未读口径不受影响——winUnreadCount 只认 won===true，NM 事件不计未读（叙事非待办）', () => {
   const evs = [
     { id: 'e1', kind: 'predict', won: null },

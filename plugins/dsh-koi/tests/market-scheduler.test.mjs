@@ -17,6 +17,28 @@ import { readJson } from '../lib/io.js'
 const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'koi-sched-'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const P3_RESULT_26283 = { issue: '26283', date: '2026-10-25', digits: [6, 4, 7], prizeGrades: { 1: 1040 } }
+// 福彩3D 夹具（docs/31 §5 第二批）：福彩 7 位期号 2026322（2026-10-25 开奖 21:15，公布后 22:00 统一窗对账）
+const D3_RESULT_2026322 = { issue: '2026322', date: '2026-10-25', digits: [6, 0, 7], prizeGrades: { 1: 1040 } }
+function default3dFetch() {
+  const base = defaultFetch()
+  return {
+    ...base,
+    async fetchHistory(game, count) {
+      if (game === '3d') {
+        const n = Math.min(count, 30)
+        return Array.from({ length: n }, (_, i) => ({
+          issue: String(2026321 - i),
+          date: new Date(Date.parse('2026-10-24') - i * 86_400_000).toLocaleDateString('sv-SE'),
+          digits: [(i + 3) % 10, 0, 7],
+        }))
+      }
+      return base.fetchHistory(game, count)
+    },
+    async fetchLatestDraw(game) {
+      return game === '3d' ? D3_RESULT_2026322 : base.fetchLatestDraw(game)
+    },
+  }
+}
 
 // ── 测试台：可编程假会话（按提示词内容写交卷文件）+ 可编程抓取 + 可注入时钟 ─────────
 function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), fetch, prompt, picks: picksOverride = null } = {}) {
@@ -27,11 +49,13 @@ function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), fetch
   fs.mkdirSync(dataDir, { recursive: true })
   fs.writeFileSync(configPath, JSON.stringify({ schemaVersion: 2, ...buildConfigDefaults(), ...cfgPatch }))
   let t = now
+  const prompts = []   // 唤醒提示词留档（3D 提示词契约等断言用；加法字段，既有用例不受影响）
   const ctx = {
     sessionController: {
       create: async () => {},
       prompt: async (req) => {
         const text = req.content[0].text
+        prompts.push(text)
         if (prompt === 'no-model') throw new Error('DSH runtime: no model configured for agent')
         // advisory 交卷
         const adv = text.match(/advisory-[\w.-]+\.json/)
@@ -78,7 +102,7 @@ function mkHarness({ cfgPatch = {}, now = new Date('2026-10-25T17:35:00'), fetch
     fetch: fetch ?? defaultFetch(),
   })
   return {
-    sched, dir, configPath, dataDir, workDir,
+    sched, dir, configPath, dataDir, workDir, prompts,
     setNow: (d) => { t = d },
     get now() { return t },
     writeCfg: (patch) => {
@@ -446,6 +470,206 @@ test('settleText NM 叙事·多注档位本注近失他注中奖：省略「账�
     assert.ok(result.body.includes('本回合计：中 1040 元'))
     assert.equal(result.won, true)
   } finally { h.sched.stop() }
+})
+
+// ───────────────────────────── 福彩3D 链路（docs/31 §5/§6 第二批：第四彩种全链路同构复用）─────────────────────────────
+// 出号（predictAt 17:30 缺省）→ 对账（22:00 统一窗，drawAt 21:15）→ NM 判定 → 战果文案（gameName=福彩3D）→ 事件层。
+
+const D3_CFG = {
+  advisory: { enabled: false },
+  modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'off' }, '3d': { mode: 'auto', tier: '3d-x1', predictAt: '17:30', gates: { honestyAck: true } } },
+}
+const settle3d = async (h, { picks, result } = {}) => {
+  await h.sched.tick()
+  await waitPreds(h, 1)
+  h.setNow(new Date('2026-10-25T22:05:00'))
+  await h.sched.tick()
+  await sleep(400)
+  return {
+    entry: readJson(path.join(h.dataDir, 'predictions.json')).entries.find((x) => x.kind === 'daily'),
+    result: readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'result'),
+    main: readJson(path.join(h.dataDir, 'ledger.json'), { entries: [] }).entries.find((x) => x.entryType === 'main'),
+  }
+}
+
+test('3D 出号流水线 smoke（auto 全流程）：7 位期号顺延 · 直选一注规格 stamps · predict 事件 gameName=福彩3D · 唤醒提示词契约', async () => {
+  const h = mkHarness({ fetch: default3dFetch(), picks: { digits: [6, 0, 7] }, cfgPatch: D3_CFG })
+  try {
+    await h.sched.tick()
+    const preds = await waitPreds(h, 1)
+    const e = preds.entries[0]
+    assert.equal(e.kind, 'daily')
+    assert.equal(e.game, '3d')
+    assert.equal(e.issue, '2026322', '福彩 7 位期号顺延（2026321 → 2026322，与 ssq 同款四位年）')
+    assert.equal(e.tier, '3d-x1', '⑥ stamp tier = 3D 轻量档')
+    assert.deepEqual([e.bets, e.cost], [1, 2], '直选一注 2 元（与排列三完全对齐，拍板 #6）')
+    assert.equal(e.spec, '直选一注')
+    assert.ok(e.baselinePicks && e.baselinePicks.digits.length === 3, '随机基线同构（三位）')
+    const stt = readJson(path.join(h.dataDir, 'state.json'))
+    assert.equal(stt.games['3d'].phase, 'predicted', 'FZ-5 相位：idle → predicted')
+    assert.equal(stt.games['3d'].picksLine, '直选 6-0-7')
+    const pe = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries.find((x) => x.kind === 'predict')
+    assert.ok(pe, 'predict 事件已产生')
+    assert.ok(pe.body.startsWith('🐟【锦鲤 · 福彩3D · 第 2026322 期'), 'gameName=福彩3D（事件层落库为固定字段集，gameName 经渲染标题入 body）')
+    // 唤醒提示词契约（prompt.js 通用分支对 3d 的产出面）
+    const p = h.prompts.find((t) => t.includes('predict-3d-'))
+    assert.ok(p, '3D 唤醒提示词已发出')
+    assert.ok(p.includes('福彩3D今晚开奖（21:15 开奖 · 20:00 停售）'), '彩种名与开奖时刻（docs/31 §5 21:15）')
+    assert.ok(p.includes('直选一注：三位数 0–9（百位-十位-个位，如 3-7-1）'), '玩法规格（通用分支）')
+    assert.ok(p.includes('百位-十位-个位（比如「6-4-7」）'), '号码写法提示')
+    assert.ok(p.includes('"picks":{"digits":[3个整数]}'), 'JSON 交卷契约（档位感知单注形态）')
+    assert.ok(p.includes('不改变中奖概率') || p.includes('不得宣称'), '诚实基调句在场')
+  } finally { h.sched.stop() }
+})
+
+test('3D 对账：直选三位全对中 1040 入账本（judge 通用分支零改本体）+ 战果文案 gameName/开奖/合计 + 增量入库 + settled 相位', async () => {
+  const h = mkHarness({ fetch: default3dFetch(), picks: { digits: [6, 0, 7] }, cfgPatch: D3_CFG })
+  try {
+    const { entry, result, main } = await settle3d(h)
+    assert.equal(entry.settled, true)
+    assert.equal(entry.settleState, 'settled')
+    assert.equal(entry.prize, 1040, '直选 1040（与 P3_ZHIXUAN 同通用奖级，judge 本体零改动）')
+    assert.equal('nearMiss' in entry, false, '全对直选不是 near-miss')
+    assert.equal(main.cost, 2, '账本按 3d-x1 记 2 元（BC-006 正式口径，docs/31 3D 同构 p3 进 ledger）')
+    assert.equal(main.prize, 1040)
+    assert.equal(main.game, '3d')
+    assert.ok(result.body.startsWith('🎰【锦鲤战果 · 福彩3D · 第 2026322 期】'), 'gameName=福彩3D（TF-17 战果正文直传，settleText g.name）')
+    assert.equal(result.won, true, '中奖标记（红点/未读口径仍只认 won）')
+    const ls = result.body.split('\n')
+    assert.equal(ls[0], '🎰【锦鲤战果 · 福彩3D · 第 2026322 期】')
+    assert.equal(ls[1], '开奖：6 0 7')
+    assert.equal(ls[2], '我们的号：直选 6-0-7')
+    assert.equal(ls[3], '（直选一注 · 1 注 / 2 元）')
+    assert.equal(ls[4], '结果：直选×1')
+    assert.equal(ls[5], '本回合计：中 1040 元')
+    assert.ok(ls.some((l) => l.includes('模拟账本')), '账本累计行在场')
+    const draws = readJson(path.join(h.dataDir, 'draws', '3d.json'), { entries: [] })
+    assert.ok((draws.entries ?? []).some((d) => d.issue === '2026322'), '④ 对账抓取双消费入库（BC-105）')
+    assert.equal(readJson(path.join(h.dataDir, 'state.json')).games['3d'].phase, 'settled')
+  } finally { h.sched.stop() }
+})
+
+test('3D 对账期号跳跃：官方已到下一期 → 翻历史核实目标期公布即按公布结清（C1 FR-001 路径对 3d 生效）', async () => {
+  // fetchLatestDraw 返回 2026323（官方已到下一期）；两阶段夹具按回看窗口宽度区分时点：
+  //   count≥100 = predict 铺底（17:35 官方最新 2026321，2026322 当晚 21:15 才开）；
+  //   count=50（VOID_HISTORY_COUNT）= 对账跳跃回看（22:05+ 官方历史已含已公布的目标期 2026322）
+  const base = default3dFetch()
+  const h = mkHarness({
+    picks: { digits: [6, 0, 7] },
+    fetch: {
+      ...base,
+      fetchHistory: async (game, count) => {
+        if (game === '3d') {
+          const preDraw = count >= 100   // 铺底窗口（predict 时点）：官方最新 2026321；回看窗口：已含公布的目标期 2026322
+          const latest = preDraw ? 2026321 : 2026322
+          return Array.from({ length: 30 }, (_, i) => ({
+            issue: String(latest - i),
+            date: new Date(Date.parse(preDraw ? '2026-10-24' : '2026-10-25') - i * 86_400_000).toLocaleDateString('sv-SE'),
+            digits: !preDraw && i === 0 ? [6, 0, 7] : [(i + 2) % 10, 0, 7],   // 目标期 2026322 = 6-0-7（与我们押的号一致）
+          }))
+        }
+        return base.fetchHistory(game, count)
+      },
+      fetchLatestDraw: async (game) => game === '3d'
+        ? { issue: '2026323', date: '2026-10-26', digits: [1, 2, 3], prizeGrades: { 1: 1040 } }
+        : base.fetchLatestDraw(game),
+    },
+    cfgPatch: D3_CFG,
+  })
+  try {
+    const { entry, result } = await settle3d(h)
+    assert.equal(entry.issue, '2026322', 'predict 目标期 = 2026322（铺底窗口官方最新 2026321）')
+    assert.equal(entry.settled, true, '目标期 2026322 翻历史核实已公布 → 结清（不作废不放弃）')
+    assert.equal(entry.settleState, 'settled')
+    assert.equal(entry.prize, 1040, '按目标期官方号码判奖（6-0-7 直选）')
+    assert.ok(result && result.body.startsWith('🎰【锦鲤战果 · 福彩3D · 第 2026322 期】'))
+    const draws = readJson(path.join(h.dataDir, 'draws', '3d.json'), { entries: [] })
+    assert.ok((draws.entries ?? []).some((d) => d.issue === '2026322'), '④ 抓过即入库（跳跃回看历史批次双消费 BC-105）')
+  } finally { h.sched.stop() }
+})
+
+test('3D near-miss NM-2：两位对入档 + result 事件携带 + §4.3 文案原文 + 账本诚实记 0（BC-006）', async () => {
+  const h = mkHarness({
+    picks: { digits: [0, 4, 7] },
+    fetch: { ...default3dFetch(), fetchLatestDraw: async (g) => g === '3d' ? { issue: '2026322', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } } : null },
+    cfgPatch: D3_CFG,
+  })
+  try {
+    const { entry, result, main } = await settle3d(h)
+    assert.equal(entry.prize, 0, '直选没奖前置成立（顺序错）')
+    assert.equal(entry.nearMiss, 'NM-2', 'judgeNearMiss 3d 生效门：两位对入档（FZ-3 只加字段）')
+    assert.equal(main.prize, 0, 'NM 永不进 ledger（直选没奖账本记 0）')
+    assert.equal('nearMiss' in main, false, 'ledger 条目零 nearMiss 字段')
+    assert.equal(result.nearMiss, 'NM-2', 'result 事件携带 nearMiss（桥接谓词 3d 自动覆盖）')
+    assert.equal(result.won, false)
+    assert.ok(result.body.includes('047 对 067，两位都对就差一位……气人！不过直选就是直选，账本记 0，锦鲤不找借口。'), '§4.3 NM-2 占位文案原文（数字代入）')
+    for (const banned of ['差一点就是', '好运在积累', '下次稳了', '大概率']) assert.ok(!result.body.includes(banned), `禁止诱导框架零命中：${banned}`)
+  } finally { h.sched.stop() }
+})
+
+test('3D near-miss NM-1：组选命中（607 vs 067 需求起源形态）§4.3 文案整行 + 行序（本回合计后/诚实句前）', async () => {
+  const h = mkHarness({
+    picks: { digits: [6, 0, 7] },
+    fetch: { ...default3dFetch(), fetchLatestDraw: async (g) => g === '3d' ? { issue: '2026322', date: '2026-10-25', digits: [0, 6, 7], prizeGrades: { 1: 1040 } } : null },
+    cfgPatch: D3_CFG,
+  })
+  try {
+    const { entry, result } = await settle3d(h)
+    assert.equal(entry.nearMiss, 'NM-1')
+    assert.equal(entry.prize, 0)
+    const ls = result.body.split('\n')
+    assert.equal(ls.length, 10, '经典 9 行 + NM 叙事 1 行')
+    assert.equal(ls[6], '气死气死！我们押的 607，开奖 067——三个数字一个不差，顺序全拧了！直选没奖，账本老老实实记 0 元。', '§4.3 NM-1 占位文案原文（3D 同文案面）')
+    assert.ok(ls[5].startsWith('本回合计：'), '叙事段紧跟本回合计')
+    assert.ok(ls[7].startsWith('同刻随机对照'), '叙事段在对照行之前')
+    assert.equal(ls[9], '开奖是随机的，图个乐～ 明天继续攒运气！', '常驻诚实句仍是末行')
+  } finally { h.sched.stop() }
+})
+
+test('3D 无 NM 轮正文与既有格式逐位一致（9 行零变化）；开奖 9-9-9 三位流水展示', async () => {
+  const h = mkHarness({
+    picks: { digits: [0, 4, 7] },
+    fetch: { ...default3dFetch(), fetchLatestDraw: async (g) => g === '3d' ? { issue: '2026322', date: '2026-10-25', digits: [9, 9, 9], prizeGrades: { 1: 1040 } } : null },
+    cfgPatch: D3_CFG,
+  })
+  try {
+    const { entry, result } = await settle3d(h)
+    assert.equal('nearMiss' in entry, false, '零位对条目零新字段（与既有输出逐位一致）')
+    const ls = result.body.split('\n')
+    assert.equal(ls.length, 9)
+    assert.deepEqual(ls.slice(0, 6), [
+      '🎰【锦鲤战果 · 福彩3D · 第 2026322 期】',
+      '开奖：9 9 9',
+      '我们的号：直选 0-4-7',
+      '（直选一注 · 1 注 / 2 元）',
+      '结果：未中奖',
+      '本回合计：中 0 元',
+    ], '前六行逐位一致（TF-17 完整文案格式不动；gameName=福彩3D）')
+    assert.equal(ls[8], '开奖是随机的，图个乐～ 明天继续攒运气！')
+  } finally { h.sched.stop() }
+})
+
+test('3D 三态与永久基础层：off 不出号；manual 来一注放行并留痕（FR-1023 第四彩种同权）', async () => {
+  const h1 = mkHarness({ fetch: default3dFetch(), cfgPatch: { modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'off' }, '3d': { mode: 'off', tier: '3d-x1' } } } })
+  try {
+    await h1.sched.tick()
+    await sleep(400)
+    assert.equal((readJson(path.join(h1.dataDir, 'predictions.json'), { entries: [] }).entries ?? []).length, 0, 'off 不出号')
+    assert.equal(h1.sched.status().games['3d'].enabledToday, false, 'off 今天不开（MB-25 三态取值）')
+  } finally { h1.sched.stop() }
+  const h2 = mkHarness({ fetch: default3dFetch(), picks: { digits: [6, 0, 7] }, cfgPatch: { modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'off' }, '3d': { mode: 'manual', tier: '3d-x1' } } } })
+  try {
+    const r = h2.sched.quickpick('3d')
+    assert.equal(r.ok, true, '三态任一放行（永久基础层）')
+    const job = await waitJob(h2.sched, r.id)
+    assert.equal(job.status, 'done')
+    const preds = await waitPreds(h2, 1)
+    assert.equal(preds.entries[0].kind, 'quickpick')
+    assert.equal(preds.entries[0].game, '3d')
+    assert.equal(preds.entries[0].manual, true, '手动号留痕（MA-26）')
+    assert.equal(preds.entries[0].cost, 2, '3d-x1 2 元')
+    assert.equal((readJson(path.join(h2.dataDir, 'ledger.json'), { entries: [] }).entries ?? []).length, 0, '加餐不入账本（AC-110）')
+  } finally { h2.sched.stop() }
 })
 
 // ───────────────────────────── ⑧ no-model 短路 · 门控 · status 降级 ────────────────────
