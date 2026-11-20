@@ -26,7 +26,7 @@ test('首写模板 v2：零 QQ 字段（grep 断言，NFR-102/AC-102 前置）+ 
   assert.deepEqual(t.channels, [{ type: 'panel', enabled: true }, { type: 'webhook', enabled: false }], 'panel 出厂启用（§5.3 权威）+ webhook 内置出厂停用（F6 零行为；url/凭证只在侧车，模板不分发示例 url）')
   for (const k of GAME_ORDER) {
     assert.equal(t.modes[k].mode, 'manual', `${k} 市场新用户默认手动`)
-    assert.equal(t.modes[k].tier, k === 'ssq' ? 'ssq-d6b1' : k === 'dlt' ? 'dlt-f5b2' : 'p3-x1', `${k} 出厂 2 元基础档（主人拍板）`)
+    assert.equal(t.modes[k].tier, k === 'ssq' ? 'ssq-d6b1' : k === 'dlt' ? 'dlt-f5b2' : k === '3d' ? '3d-x1' : 'p3-x1', `${k} 出厂 2 元基础档（主人拍板；3d=docs/31 §5 轻量档）`)
     assert.equal(t.modes[k].predictAt, '17:30')
   }
   assert.equal(t.budget.weeklyCap, 1_500_000, '市场默认 150 万/周（拍板12）')
@@ -38,11 +38,34 @@ test('首写模板 v2：零 QQ 字段（grep 断言，NFR-102/AC-102 前置）+ 
   assert.equal(v.ok, true, `模板必须自校验通过：${v.errors.join('；')}`)
 })
 
-test('GAMES 加 drawAt（MB-12）：三彩种结构化开奖时刻，早于 settleAt，与 drawTimeText 文案一致', () => {
+test('GAMES 加 drawAt（MB-12）：四彩种结构化开奖时刻，早于 settleAt，与 drawTimeText 文案一致', () => {
   assert.equal(GAMES.ssq.drawAt, '21:15')
   assert.equal(GAMES.dlt.drawAt, '21:25')
   assert.equal(GAMES.p3.drawAt, '21:25')
+  assert.equal(GAMES['3d'].drawAt, '21:15', 'docs/31 §5：福彩3D 21:15 开奖')
   for (const k of GAME_ORDER) assert.ok(GAMES[k].drawTimeText.startsWith(GAMES[k].drawAt))
+})
+
+test('3D 彩种注册（docs/31 §5 第二批①）：GAME_ORDER 第四位、modes.3d 出厂 manual+3d-x1+17:30、档位归属与 predictAt 门、v1 games.3d.enabled 读兼容', () => {
+  assert.deepEqual(GAME_ORDER, ['ssq', 'dlt', 'p3', '3d'], '3d 为第四彩种（追加不重排）')
+  const t = buildConfigTemplate()
+  assert.deepEqual(t.modes['3d'], { mode: 'manual', tier: '3d-x1', predictAt: '17:30', gates: { channelOk: true, tierOk: true, timeOk: true, honestyAck: false }, wizardDone: false }, '出厂 manual 对齐市场纪律（主人实例要 auto 自己面板开，代码不预设）')
+  const v = validateConfig(t)
+  assert.equal(v.ok, true, `含 3d 的模板自校验通过：${v.errors.join('；')}`)
+  // 档位归属与时间门逐彩种生效（3d drawAt 21:15）
+  let c = validCfg(); c.modes['3d'].tier = 'p3-x1'
+  assert.ok(validateConfig(c).errors.some((e) => e.includes('不属于')), '跨彩种档位拒绝（3d 不得挂 p3 档）')
+  c = validCfg(); c.modes['3d'].predictAt = '21:15'
+  assert.ok(validateConfig(c).errors.some((e) => e.includes('早于开奖')), 'predictAt ≥ 21:15 拒绝')
+  c = validCfg(); c.modes['3d'].predictAt = '17:30'
+  assert.equal(validateConfig(c).ok, true)
+  // v1.1 games 无 modes 读兼容换算对 3d 同样成立（games.3d.enabled）
+  const dir = tmpdir()
+  const p = path.join(dir, 'koi.config.json')
+  fs.writeFileSync(p, JSON.stringify({ games: { '3d': { enabled: true } }, time: {} }))
+  const cfg = readConfig(p)
+  assert.equal(modeOf(cfg, '3d'), 'auto', 'games.3d.enabled=true → auto（v1 兼容通道随 GAME_ORDER 扩容自动覆盖）')
+  assert.equal(tierOf(cfg, '3d'), '3d-x1', '换算档位 = 3d 出厂基础档')
 })
 
 test('validateConfig：非法值逐项拒绝（预算 0/档位越界/跨彩种档/predictAt≥drawAt/枚举非法/roles 越界/mirror 未确认）', () => {

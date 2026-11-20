@@ -57,8 +57,8 @@ test('T-09 status 快照：顶层与各子对象键集逐位不变（FZ-6）', (
   try {
     const st = sched.status()
     assert.deepEqual(keys(st), TOP_KEYS, '顶层字段集必须逐位不变')
-    assert.deepEqual(Object.keys(st.games), ['ssq', 'dlt', 'p3'], 'games 三彩种与顺序')
-    for (const k of ['ssq', 'dlt', 'p3']) {
+    assert.deepEqual(Object.keys(st.games), ['ssq', 'dlt', 'p3', '3d'], 'games 四彩种与顺序（docs/31 §5 第二批：3d 追加不重排）')
+    for (const k of ['ssq', 'dlt', 'p3', '3d']) {
       assert.deepEqual(keys(st.games[k]), GAME_KEYS, `games.${k} 子字段集`)
       assert.deepEqual(keys(st.tiers[k]), TIER_KEYS, `tiers.${k} 子字段集`)
       assert.deepEqual(keys(st.backbone[k]), BACKBONE_KEYS, `backbone.${k} 子字段集`)

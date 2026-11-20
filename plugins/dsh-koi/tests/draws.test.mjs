@@ -10,16 +10,16 @@ import {
   emptyLedger, appendLedgerEntry, ledgerTotals, ledgerTotalsText,
 } from '../lib/draws.js'
 
-test('开奖日历：2026-10-23（周五）只开排列三', () => {
-  assert.deepEqual(gamesForDate('2026-10-23'), ['p3'])
+test('开奖日历：2026-10-23（周五）=排列三+福彩3D（docs/31 §5 第四彩种每日开奖）', () => {
+  assert.deepEqual(gamesForDate('2026-10-23'), ['p3', '3d'])
 })
-test('开奖日历：周六=大乐透+排列三，周日=双色球+排列三', () => {
-  assert.deepEqual(gamesForDate('2026-10-24'), ['dlt', 'p3'])
-  assert.deepEqual(gamesForDate('2026-10-25'), ['ssq', 'p3'])
+test('开奖日历：周六=大乐透+排列三+3D，周日=双色球+排列三+3D', () => {
+  assert.deepEqual(gamesForDate('2026-10-24'), ['dlt', 'p3', '3d'])
+  assert.deepEqual(gamesForDate('2026-10-25'), ['ssq', 'p3', '3d'])
 })
-test('开奖日历：周一=大乐透，周二=双色球', () => {
-  assert.deepEqual(gamesForDate('2026-10-26'), ['dlt', 'p3'])
-  assert.deepEqual(gamesForDate('2026-10-27'), ['ssq', 'p3'])
+test('开奖日历：周一=大乐透，周二=双色球（3D 每日随行）', () => {
+  assert.deepEqual(gamesForDate('2026-10-26'), ['dlt', 'p3', '3d'])
+  assert.deepEqual(gamesForDate('2026-10-27'), ['ssq', 'p3', '3d'])
 })
 test('开奖日历：非法日期不炸', () => {
   assert.deepEqual(gamesForDate('not-a-date'), [])
@@ -30,6 +30,26 @@ test('复式注数与投注额：红8+蓝1=28注56元；前7+后2=21注42元；�
   assert.deepEqual(stakesOf('ssq'), { bets: 28, cost: 56, spec: '红8+蓝1 复式' })
   assert.deepEqual(stakesOf('dlt'), { bets: 21, cost: 42, spec: '前7+后2 复式' })
   assert.deepEqual(stakesOf('p3'), { bets: 1, cost: 2, spec: '直选一注' })
+})
+
+// ── 福彩3D 彩种注册（docs/31 §5 第二批①：与排列三同构，通用分支零改 judge）──────────
+test('3D 彩种定义：福彩3D 每日开奖 · 21:15 开奖（drawAt 与文案一致）· 三位数字型 · 2 元', () => {
+  assert.equal(GAMES['3d'].key, '3d')
+  assert.equal(GAMES['3d'].name, '福彩3D')
+  assert.deepEqual(GAMES['3d'].drawDays, [0, 1, 2, 3, 4, 5, 6], '每日开奖（与排列三同款）')
+  assert.equal(GAMES['3d'].drawAt, '21:15', 'docs/31 §5：21:15 开奖、公布约 21:30+，对账复用 22:00 窗')
+  assert.ok(GAMES['3d'].drawTimeText.startsWith(GAMES['3d'].drawAt))
+  assert.equal(GAMES['3d'].digits, 3)
+  assert.equal(GAMES['3d'].unitStake, 2)
+  assert.deepEqual(stakesOf('3d'), { bets: 1, cost: 2, spec: '直选一注' }, '直选一注 2 元与排列三完全对齐（拍板 #6）')
+})
+test('3D 通用分支（judge 本体零改动，FZ-1）：直选中 1040 / 错位未中 0 / picksLine 直选格式', () => {
+  assert.equal(judge('3d', { digits: [6, 0, 7] }, { digits: [6, 0, 7] }).money, 1040, '3D 直选三位全对 = 1040 元（同 P3_ZHIXUAN 通用奖级）')
+  assert.equal(judge('3d', { digits: [6, 0, 7] }, { digits: [0, 6, 7] }).money, 0, '顺序错直选没奖——账本诚实记 0（BC-006）')
+  assert.equal(enumerateBets('3d', { digits: [6, 0, 7] }).length, 1)
+  assert.equal(picksLine('3d', { digits: [6, 0, 7] }), '直选 6-0-7')
+  assert.equal(gradeSummaryText('3d', judge('3d', { digits: [6, 0, 7] }, { digits: [6, 0, 7] })), '直选×1')
+  assert.equal(validatePicks('3d', { digits: [6, 0, 7] }).ok, false, 'validatePicks 为 v1 规格路径（FZ 冻结面，仅显式 ssq/dlt/p3）——3d 生产校验面是档位感知 validateTierPicks（零改 v1 函数）')
 })
 
 test('校验：双色球合法号通过并排序', () => {
@@ -54,12 +74,18 @@ test('校验：大乐透 7+2 与排列三三位', () => {
   assert.equal(validatePicks('p3', { digits: [6, 4, 10] }).ok, false)
 })
 
-test('兜底随机号：200 轮全部合规', () => {
+test('兜底随机号：200 轮全部合规（v1 规格路径三彩种；3d 随机形态独立断言）', () => {
+  // validatePicks 为 v1 规格校验器（FZ 冻结面，仅显式 ssq/dlt/p3）——3d 生产校验面是档位感知
+  // validateTierPicks（market-tiers.test.mjs 3d-x1 随机自校验 50 轮），此处不混测两代口径
   for (let i = 0; i < 200; i++) {
-    for (const k of Object.keys(GAMES)) {
+    for (const k of ['ssq', 'dlt', 'p3']) {
       const v = validatePicks(k, randomPicks(k))
       assert.equal(v.ok, true, `${k} 兜底号不合规：${JSON.stringify(v)}`)
     }
+  }
+  for (let i = 0; i < 200; i++) {
+    const p = randomPicks('3d')
+    assert.ok(Array.isArray(p.digits) && p.digits.length === 3 && p.digits.every((x) => Number.isInteger(x) && x >= 0 && x <= 9), '3d 兜底号 = 三位 0–9（通用分支）')
   }
 })
 

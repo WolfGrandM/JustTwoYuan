@@ -27,12 +27,14 @@ fs.mkdirSync(path.join(dataDir, 'draws'), { recursive: true })
 // ⚠ 日期必须相对当天生成（TF-14）：硬编码日期会在 7 天后被 isStaleDraw 判过期，
 //   ensureRecent 转走真实网络路径 → fetched≠0 → 断言失败（2026-10-29 时间炸弹实录）
 const dayStr = (offset) => new Date(Date.now() - offset * 86_400_000).toLocaleDateString('sv-SE')
-for (const g of ['ssq', 'dlt', 'p3']) {
+for (const g of ['ssq', 'dlt', 'p3', '3d']) {
   const entries = Array.from({ length: 100 }, (_, i) => g === 'ssq'
     ? { issue: String(2026121 - i), date: dayStr(i), red: [2, 7, 20, 24, 26, 30], blue: 2 }
     : g === 'dlt'
       ? { issue: String(26120 - i), date: dayStr(i), front: [1, 6, 10, 15, 32], back: [3, 4] }
-      : { issue: String(26282 - i), date: dayStr(i), digits: [6, 4, 7] })
+      : g === '3d'
+        ? { issue: String(2026322 - i), date: dayStr(i), digits: [6, 0, 7] }   // 福彩3D：福彩 7 位期号（docs/31 §5 第二批）
+        : { issue: String(26282 - i), date: dayStr(i), digits: [6, 4, 7] })
   fs.writeFileSync(path.join(dataDir, 'draws', `${g}.json`), JSON.stringify({ schemaVersion: 1, entries }))
 }
 process.env.DSH_HOME = dir
@@ -164,7 +166,7 @@ test('backbone：GET 状态透出；POST 近期窗口按需拉取（本地已足
   const p = await call('/dsh-koi/api/backbone', { method: 'POST' }).promise
   assert.equal(p.code, 200)
   assert.equal(p.json.ok, true)
-  assert.deepEqual([p.json.perGame.ssq.fetched, p.json.perGame.dlt.fetched, p.json.perGame.p3.fetched], [0, 0, 0], '库足零网络（AC-115 口径）')
+  assert.deepEqual([p.json.perGame.ssq.fetched, p.json.perGame.dlt.fetched, p.json.perGame.p3.fetched, p.json.perGame['3d'].fetched], [0, 0, 0, 0], '库足零网络（AC-115 口径；3d 第四彩种同一路径）')
   // 第二波翻转（docs/19 §0.2/§8）：/api/ingest 从「不存在」→「存在且守卫」（学习半环已落地）
   assert.equal(routes.has('/dsh-koi/api/ingest'), true, '第二波：/api/ingest 存在（上传 raw body + ?name=）')
 })

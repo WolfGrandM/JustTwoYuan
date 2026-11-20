@@ -10,11 +10,12 @@
 import { GAMES, comb, judge } from './draws.js'
 
 // ── 档位表（DC-106 初始档集，A2.1 V2 实测注数/价格；出厂默认档 = 2 元单式基础档，主人 2026-10-25 拍板）──
-// 结构：ssq { red, blue } / dlt { front, back } / p3 { units }（直选单式 ×N）
+// 结构：ssq { red, blue } / dlt { front, back } / p3 { units }（直选单式 ×N）/ 3d { units }（与 p3 同构，docs/31 §5）
 export const TIERS = {
   'p3-x1': { id: 'p3-x1', game: 'p3', units: 1, label: '直选单式 ×1' },
   'p3-x3': { id: 'p3-x3', game: 'p3', units: 3, label: '直选单式 ×3' },
   'p3-x5': { id: 'p3-x5', game: 'p3', units: 5, label: '直选单式 ×5' },
+  '3d-x1': { id: '3d-x1', game: '3d', units: 1, label: '直选单式 ×1' },   // 福彩3D 轻量档（docs/31 §5：直选一注 2 元与排列三对齐，拍板 #6）
   'ssq-d6b1': { id: 'ssq-d6b1', game: 'ssq', red: 6, blue: 1, label: '单式 6+1' },
   'ssq-r7b1': { id: 'ssq-r7b1', game: 'ssq', red: 7, blue: 1, label: '红7+蓝1' },
   'ssq-r8b1': { id: 'ssq-r8b1', game: 'ssq', red: 8, blue: 1, label: '红8+蓝1' },
@@ -39,12 +40,12 @@ export function tiersForGame(gameKey) {
 
 /** 出厂默认档 = 2 元单式基础档（主人 2026-10-25 拍板：所有彩种默认推荐 2 元档，其余档位保留） */
 export function defaultTierFor(gameKey) {
-  return gameKey === 'ssq' ? 'ssq-d6b1' : gameKey === 'dlt' ? 'dlt-f5b2' : 'p3-x1'
+  return gameKey === 'ssq' ? 'ssq-d6b1' : gameKey === 'dlt' ? 'dlt-f5b2' : gameKey === '3d' ? '3d-x1' : 'p3-x1'
 }
 
-/** v1 复式结构的等价档（migrate-v2 反查用：作者账本连续性，§2.2.10-4②） */
+/** v1 复式结构的等价档（migrate-v2 反查用：作者账本连续性，§2.2.10-4②）——v1 无 3d，回落其出厂基础档 */
 export function v1EquivTier(gameKey) {
-  return gameKey === 'ssq' ? 'ssq-r8b1' : gameKey === 'dlt' ? 'dlt-f7b2' : 'p3-x1'
+  return gameKey === 'ssq' ? 'ssq-r8b1' : gameKey === 'dlt' ? 'dlt-f7b2' : gameKey === '3d' ? '3d-x1' : 'p3-x1'
 }
 
 /** 档位一期的注数与投注额（D-004：ssq C(red,6)×blue×2 / dlt C(front,5)×C(back,2)×2 / p3 units×2） */

@@ -12,13 +12,14 @@ import {
 } from '../lib/tiers.js'
 import { GOLDEN_SSQ as SSQ, GOLDEN_DLT as DLT, GOLDEN_P3 as P3 } from '../lib/golden-fixtures.js'
 
-test('档表 11 档注数/价格与 §2.2.4-1 表逐档一致（含 2 元单式基础档，主人 2026-10-25 拍板）；档表自检（units×单价=价格）', () => {
+test('档表 12 档注数/价格与 §2.2.4-1 表逐档一致（含 2 元单式基础档，主人 2026-10-25 拍板；3d-x1=docs/31 §5 轻量档）；档表自检（units×单价=价格）', () => {
   const expect = {
     'p3-x1': [1, 2], 'p3-x3': [3, 6], 'p3-x5': [5, 10],
+    '3d-x1': [1, 2],
     'ssq-d6b1': [1, 2], 'ssq-r7b1': [7, 14], 'ssq-r8b1': [28, 56], 'ssq-r9b2': [168, 336],
     'dlt-f5b2': [1, 2], 'dlt-f6b2': [6, 12], 'dlt-f7b2': [21, 42], 'dlt-f8b3': [168, 336],
   }
-  assert.equal(Object.keys(TIERS).length, 11)
+  assert.equal(Object.keys(TIERS).length, 12)
   for (const [id, [bets, cost]] of Object.entries(expect)) {
     const s = tierStakes(id)
     assert.deepEqual([s.bets, s.cost], [bets, cost], `${id} 应为 ${bets} 注 / ${cost} 元`)
@@ -26,13 +27,15 @@ test('档表 11 档注数/价格与 §2.2.4-1 表逐档一致（含 2 元单式�
   assert.deepEqual(tierTableSelfCheck(), { ok: true, problems: [] })
 })
 
-test('默认档=2 元单式基础档（主人 2026-10-25 拍板：所有彩种默认推荐 2 元档）；v1 等价档=作者迁移值；v1 复式结构与等价档 stakes 逐位一致', () => {
+test('默认档=2 元单式基础档（主人 2026-10-25 拍板：所有彩种默认推荐 2 元档；3d=3d-x1 docs/31 §5）；v1 等价档=作者迁移值；v1 复式结构与等价档 stakes 逐位一致', () => {
   assert.equal(defaultTierFor('ssq'), 'ssq-d6b1')
   assert.equal(defaultTierFor('dlt'), 'dlt-f5b2')
   assert.equal(defaultTierFor('p3'), 'p3-x1')
+  assert.equal(defaultTierFor('3d'), '3d-x1', '福彩3D 出厂轻量档（docs/31 §5 直选一注 2 元）')
   assert.equal(v1EquivTier('ssq'), 'ssq-r8b1')
   assert.equal(v1EquivTier('dlt'), 'dlt-f7b2')
   assert.equal(v1EquivTier('p3'), 'p3-x1')
+  assert.equal(v1EquivTier('3d'), '3d-x1', 'v1 无 3d——迁移反查回落出厂基础档（不得错指 p3-x1）')
   assert.equal(tierStakes('ssq-r8b1').cost, stakesOf('ssq').cost)
   assert.equal(tierStakes('dlt-f7b2').cost, stakesOf('dlt').cost)
   assert.equal(tierStakes('p3-x1').cost, stakesOf('p3').cost)
@@ -90,6 +93,26 @@ test('dlt 长池单单元：f6b2/f7b2/f8b3 判奖（f8b3=168 注，enumerateBets
   const j6 = judgeTier('dlt-f6b2', { front: [1, 6, 10, 15, 32, 7], back: [3, 4] }, DLT)
   assert.equal(j6.bets, 6)
   assert.deepEqual(j6.grades, { 1: 1, 4: 5 })
+})
+
+test('3D 档位面（docs/31 §5 第二批①）：3d-x1 校验/随机/判奖/spec 与 p3 同构（通用分支零复制）', () => {
+  assert.equal(tiersForGame('3d').length, 1, '3D 轻量档 = 仅 3d-x1 一档')
+  // 校验：合法通过；越界/位数/重复档结构拒绝
+  let v = validateTierPicks('3d-x1', { digits: [0, 6, 7] })
+  assert.equal(v.ok, true); assert.deepEqual(v.picks, { digits: [0, 6, 7] }, '000–999 三位（含 0）')
+  assert.equal(validateTierPicks('3d-x1', { digits: [6, 0] }).ok, false, '位数≠3 拒绝')
+  assert.equal(validateTierPicks('3d-x1', { digits: [6, 0, 10] }).ok, false, '位值域 0–9 越界拒绝')
+  // 判奖：直选 1040 / 组选形态直选没奖记 0
+  const j = judgeTier('3d-x1', { digits: [0, 6, 7] }, { issue: '2026322', date: '2026-10-25', digits: [0, 6, 7] })
+  assert.equal(j.money, 1040); assert.equal(j.bets, 1); assert.deepEqual(j.grades, { 1: 1 })
+  assert.equal(judgeTier('3d-x1', { digits: [6, 0, 7] }, { issue: '2026322', date: '2026-10-25', digits: [0, 6, 7] }).money, 0)
+  // 随机兜底自校验（000-999 全值域）+ spec 文案
+  for (let i = 0; i < 50; i++) {
+    const v2 = validateTierPicks('3d-x1', randomTierPicks('3d-x1'))
+    assert.equal(v2.ok, true, `3d-x1 随机号自校验合法（第 ${i} 轮）`)
+  }
+  assert.ok(specText('3d-x1').includes('直选一注'))
+  assert.ok(specText('3d-x1').includes('2 元'))
 })
 
 test('validateTierPicks：档位结构感知（个数随档、值域、去重、排序规范化、蓝双选标量/数组双形态）', () => {
