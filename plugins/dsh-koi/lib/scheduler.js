@@ -33,7 +33,7 @@ import { GAMES, GAME_ORDER, gamesForDate, stakesOf, validatePicks, randomPicks, 
 import { fetchHistory, fetchLatestDraw, fetchHistoryPage } from './fetch-draws.mjs'
 import { buildPredictPrompt, fallbackMessage } from './prompt.js'
 import { readJson, writeJsonAtomic, ensureSchemaVersion } from './io.js'
-import { tierById, tierStakes, tiersForGame, validateTierPicks, randomTierPicks, judgeTier } from './tiers.js'
+import { tierById, tierStakes, tiersForGame, validateTierPicks, randomTierPicks, judgeTier, specText } from './tiers.js'
 import { createDrawStore } from './drawstore.js'
 import { createBackfill } from './backfill.js'
 import { createJobLock } from './joblock.js'
@@ -52,6 +52,8 @@ import { createHealthScanner } from './review/health.js'
 import { createProposalEngine } from './review/proposal.js'   // 环 A 探索性提案（收尾批 T2）
 import { createMonthlyReview } from './review/monthly.js'
 import { createMetering, KOI_SESSION_PREFIX } from './mind/metering.js'   // M3-T1 计量路径 A（FR-045，docs/33 §5.1）
+import { castTierOf } from './mind/agenda.js'                             // M3-T2 档位映射（分流判定；mind 闸在 castTierOf 内——FR-023）
+import { createOrchestrator } from './mind/orchestrator.js'               // M3-T2 编排器（FR-016~021，docs/33 §2.2/§3）
 import { computeForIssue, attachAttribution } from './review/attribution.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
@@ -280,14 +282,19 @@ export function startKoiScheduler(ctx, opts) {
 
   // ⑧ 无模型错误分类短路：promptAgent 抛错先过 classifyHostError
   // M3-T1 形参扩展（docs/33 §2.5 scheduler 行②，默认兼容现状）：{ activity, role, callRef,
-  // sessionId }——sessionId 缺省 = 常驻 koi-lottery（现状逐位）；编排会话（koi-daily-*，T2
-  // sessionFor 每期新开）由调用方先 create 再传入。
+  // sessionId }。M3-T2 会话语义（FR-054/B-35，拍板 P15）：sid 缺省 = 常驻 koi-lottery（闲聊/
+  // 加餐/advisory/narrate 既有面逐位）；sid=koi-daily-* 每期新开（create 失败=已有同名会话沿用）。
   // 计量路径 A 接线（FR-045）：打标调用（role/callRef 在位）走 metering——直采在位走 path-a
   // 分账（est:false），缺失走 path-b est 定额兜底；未打标调用面（predict/learning/advisory/
   // review 现状单 agent）保持 chars/4 est 恒标现状口径逐位不变。
   async function promptAgent(text, { activity = 'predict', role = null, callRef = null, sessionId: sidIn = null } = {}) {
-    await ensureSession()
     const sid = sidIn ?? sessionId
+    if (sid === sessionId) {
+      await ensureSession()
+    } else {
+      try { await ctx.sessionController.create({ sessionId: sid, cwd: workDir }) }
+      catch { log(`[koi] 会话 ${sid} 未新建（可能已有同名会话），沿用已有会话`) }
+    }
     try {
       await ctx.sessionController.prompt(
         { requestId: 'koi-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), sessionId: sid, mode: 'queue', content: [{ type: 'text', text }] },
@@ -317,6 +324,24 @@ export function startKoiScheduler(ctx, opts) {
     return { totals, demo }
   }
 
+  // ── M3-T2 编排器装配（docs/33 §2.2 orchestrator.js 行：DI 全回调注入——判奖/校验/闸经注入
+  //    回调，mind 层零 draws.js/render.js import；injector/trimmer 随 T3 渐进装配传 null）──
+  const mindOrchestrator = createOrchestrator({
+    promptAgent,
+    validatePicks: (tierId, picks) => validateTierPicks(tierId, picks),   // FZ-2 硬校验单点复用（零重实现——FR-020）
+    probabilityClaim: (text) => hasProbabilityClaim(text),                // BC-001③ 概率宣称闸（render.js:61 单点）
+    budgetState: (cfg2) => budgetState(cfg2 ?? cfgNow()),                 // §3.3 四级优先序① cap 二次判定
+    reviewStore,
+    metering: mindMetering,                                               // T1 计量面（turn 收口对账）
+    injector: null,                                                       // T3 渐进装配
+    trimmer: null,                                                        // T3 渐进装配
+    now: nowFn,
+    hhmm: () => hhmm(),                                                   // timeutil 单点经注入（mind 层零 timeutil import）
+    workDir,
+    log,
+    stopCheck: () => stopped,
+  })
+
   // ── 出号流水线（正式预测与加餐共用；返回 { picks, message, via, issue, summary }）──────
   let inFlight = false
   async function runPredictFlow(gameKey, { quick = false, late = false } = {}) {
@@ -343,10 +368,64 @@ export function startKoiScheduler(ctx, opts) {
         appendPrediction({ cfg, gameKey, issue, picks, message, via: 'fallback', quick, tier, effortTier, summary: null, note: '预算触顶 · 兜底档零 LLM' })
         return { picks, message, via: 'fallback', issue, summary: null }
       }
+      // ── M3-T2 编排分流（docs/33 §2.5③：mind.enabled && castTier!=='single' && 非 quick → orchestrator；
+      //    周级 cap 短路在上方已完成——「cap 短路 > 硬停线 > 切片超时降档 > 计划档」§3.3；quickpick 加餐
+      //    留 koi-lottery 常驻单 Agent（FR-054：koi-lottery 留闲聊与加餐）。orchestrator 内部已含打回与
+      //    剔除，出 orchestrator 的 picks 已过校验——消费段硬校验/兜底结构对编排路径不变（§2.5③）。──
+      let orchStamps = null
+      if (!quick && cfg.mind?.enabled === true && castTierOf(cfg, gameKey) !== 'single') {
+        const tierObj = tierById(tier)
+        const cfgEffO = { ...cfg, effort: { tier: effortTier } }
+        const tierSpec = tierObj ? { text: specText(tierObj), picksShape: picksShapeHint(tierObj) } : null
+        const packText = dataPack(gameKey, history, { tailCount: leversFor(cfgEffO).tail, issue })   // §4.1 数据层=dataPack 原文（探索性素材段同源）
+        let r = null
+        try {
+          r = await mindOrchestrator.runPredict({ gameKey, issue, tier, history, cfg, dataPackText: packText, tierSpec, late, effortTier })
+        } catch (e) {
+          // 编排器自身异常 → 兜底档保交付（BC-011 时效承诺：「任何一环失败都退回已验证的兜底档」§8）
+          log(`[koi] ${gameKey} 编排器异常（转兜底档保交付）：${String(e?.message ?? e).slice(0, 160)}`)
+          const picks = randomTierPicks(t ?? gameKey)
+          const message = fallbackMessage(gameKey, picks)
+          appendPrediction({ cfg, gameKey, issue, picks, message, via: 'fallback', quick, tier, effortTier, summary: null, note: '编排器异常 · 兜底档', stamps: { castTier: 'fallback', planTier: castTierOf(cfg, gameKey), agendaVersion: 'single' } })
+          return { picks, message, via: 'fallback', issue, summary: null }
+        }
+        if (r.via === 'skip' && r.skip?.code === 'tier-exhausted') {
+          // 链耗尽让位现状 single 路径（§3.1：lite 超时 → single；编排痕迹如实入 stamp——R4 口径
+          // single 档 agendaVersion 恒 'single'，castTier 记实际档）
+          log(`[koi] ${gameKey} 编排链耗尽 → 现状 single 路径接手（${r.skip?.reason}）`)
+          orchStamps = { castTier: 'single', planTier: r.planTier ?? castTierOf(cfg, gameKey), agendaVersion: 'single',
+            ...(r.roles?.length ? { roles: r.roles } : {}), ...(r.strippedRoles?.length ? { strippedRoles: r.strippedRoles } : {}),
+            ...(r.injectionNote ? { injectionNote: r.injectionNote } : {}) }
+        } else {
+          const stamps = {
+            castTier: r.castTier, planTier: r.planTier ?? castTierOf(cfg, gameKey),
+            agendaVersion: r.agendaVersion ?? 'single',
+            ...(r.confidenceTier ? { confidenceTier: r.confidenceTier } : {}),
+            ...(r.roles?.length ? { roles: r.roles } : {}),
+            ...(r.strippedRoles?.length ? { strippedRoles: r.strippedRoles } : {}),
+            ...(r.injectionNote ? { injectionNote: r.injectionNote } : {}),
+          }
+          let picks, message, via, summary = r.summary ?? null
+          if (r.via === 'ai') { picks = r.picks; message = r.message; via = 'ai' }
+          else {
+            // 兜底档（硬停/预算耗尽/定稿两次不过闸）：随机号照发+透明标注（BC-005，FZ-2 randomTierPicks 单点）
+            picks = randomTierPicks(t ?? gameKey)
+            message = fallbackMessage(gameKey, picks)
+            via = 'fallback'
+          }
+          appendPrediction({ cfg, gameKey, issue, picks, message, via, quick, tier, effortTier, summary, stamps })
+          return { picks, message, via, issue, summary }
+        }
+      }
+      // ── single 档现状路径（mind 关 / 用户配 single / quickpick 加餐 / 编排链耗尽接手——FZ-5 相位机
+      //    与消费段结构逐字保持；orchStamps 非 null 时条目加 stamp 组，mind 关时恒 null 零新字段逐位一致）──
       // 2) 叫醒她（先清掉旧结果文件）；力度杠杆随 effectiveEffort（MC-10）
       const cfgEff = { ...cfg, effort: { tier: effortTier } }
+      // FR-054/B-35（拍板 P15）：定时出号每期新开会话 koi-daily-<game>-<issue>（编排角色会话加 -<id>
+      // 后缀）；koi-lottery 常驻留闲聊与加餐——quick 恒 null=现状会话逐位
+      const dailySession = quick ? null : `${KOI_SESSION_PREFIX}${gameKey}-${issue}`
       try { fs.rmSync(outPath, { force: true }) } catch {}
-      await promptAgent(buildPredictPrompt({ gameKey, cfg: cfgEff, tier, history, issue, outPath, late }))
+      await promptAgent(buildPredictPrompt({ gameKey, cfg: cfgEff, tier, history, issue, outPath, late }), { sessionId: dailySession })
       // 3) 等结果文件 → 档位硬校验；不合法给一次重写机会；再不行随机兜底（FZ-2 平行函数）
       let raw = await waitJsonFile(outPath, { timeoutMs: FILE_WAIT_MS, pollMs: FILE_POLL_MS, stopCheck: () => stopped })
       let v = raw ? validateTierPicks(t ?? tierOf(cfg, gameKey), raw.picks ?? raw) : { ok: false, error: '没有等到结果文件' }
@@ -355,7 +434,7 @@ export function startKoiScheduler(ctx, opts) {
         await promptAgent([
           '【打回重写】你刚写的文件系统校验没过：' + v.error,
           `请立刻重写 ${outPath}（还是那个 JSON 契约，号码必须合规），写完就停。`,
-        ].join('\n'))
+        ].join('\n'), { sessionId: dailySession })
         raw = await waitJsonFile(outPath, { timeoutMs: 60_000, pollMs: FILE_POLL_MS, stopCheck: () => stopped })
         v = raw ? validateTierPicks(t ?? tierOf(cfg, gameKey), raw.picks ?? raw) : { ok: false, error: '重写也没等到' }
       }
@@ -371,7 +450,7 @@ export function startKoiScheduler(ctx, opts) {
         message = fallbackMessage(gameKey, picks)
         via = 'fallback'
       }
-      appendPrediction({ cfg, gameKey, issue, picks, message, via, quick, tier, effortTier, summary })
+      appendPrediction({ cfg, gameKey, issue, picks, message, via, quick, tier, effortTier, summary, stamps: orchStamps })
       return { picks, message, via, issue, summary }
     } finally {
       inFlight = false
@@ -379,8 +458,18 @@ export function startKoiScheduler(ctx, opts) {
     }
   }
 
+  /** 编排 chair 契约的 picks JSON 形状示例（提示文本非校验逻辑——校验唯一在 validateTierPicks FZ-2 单点） */
+  function picksShapeHint(tObj) {
+    if (tObj.game === 'ssq') return tObj.blue === 1 ? '{"red":[N个整数],"blue":1个整数}' : '{"red":[N个整数],"blue":[2个整数]}'
+    if (tObj.game === 'dlt') return '{"front":[N个整数],"back":[N个整数]}'
+    return tObj.units === 1 ? '{"digits":[3个整数]}' : '{"digits":[[3个整数],…共' + tObj.units + '组]}'
+  }
+
   // ⑥ 落 predictions + stamp（tier/effortTier/baselinePicks/summary/manual/configStamp——FZ-3 只加字段）
-  function appendPrediction({ cfg, gameKey, issue, picks, message, via, quick, tier, effortTier, summary, note }) {
+  // M3-T2：stamps 增参（编排条目五 stamp 组 castTier/planTier/agendaVersion/confidenceTier/roles±
+  // strippedRoles/injectionNote——docs/33 §2.5 stamp 组；全部开奖前一次性写入；mind 关恒 null
+  // 零新字段与现状逐位一致；schemaVersion 维持 2——docs/19 §7 先例）
+  function appendPrediction({ cfg, gameKey, issue, picks, message, via, quick, tier, effortTier, summary, note, stamps = null }) {
     const preds = readPreds()
     const s = tierStakes(tier) ?? stakesOf(gameKey)
     const isManualPick = quick && modeOfGame(cfg, gameKey) === 'manual'
@@ -389,6 +478,7 @@ export function startKoiScheduler(ctx, opts) {
       game: gameKey, issue, date: todayStr(), picks, via,
       bets: s.bets, cost: s.cost, spec: s.spec,          // ⑦ 出号时随条目写规格（settleText 改读这组）
       tier, effortTier, configStamp: buildConfigStamp(cfg),
+      ...(stamps && typeof stamps === 'object' ? stamps : {}),
       ...(quick ? {} : { baselinePicks: randomTierPicks(tier) }),   // 随机基线同构（DC-002，仅正式预测）
       ...(summary ? { summary } : {}),
       ...(isManualPick ? { manual: true } : {}),          // 手动号留痕（MA-26）
@@ -978,10 +1068,11 @@ export function startKoiScheduler(ctx, opts) {
       onSettled: reviewOnSettled,   // T5 观察者（archiveAuthoritative 开关控制；测试/面板可直调）
       proposals: reviewProposals,   // 环 A 探索性提案引擎（收尾批 T2；测试/CLI 可直调 run({period})）
     },
-    mind: {         // M3 渐进装配（T1 计量面；agenda/orchestrator/injector 随 T2/T3 并入——docs/33 §7 渐进装配注记）
+    mind: {         // M3 渐进装配（T1 计量 + T2 编排；injector 随 T3 并入——docs/33 §7 渐进装配注记）
       metering: mindMetering,       // 计量路径 A（recordStep/reconcileTurn/gate/modeOf/weekByRole 直调面）
       meteringStatus: () => ({ mode: mindMetering.modeOf(), channels: mindMetering.channelsOf() }),   // §2.4：计量口径诚实披露（status 附加字段数据源）
-      sessionPrefix: KOI_SESSION_PREFIX,   // koi-daily- 前缀单点（§2.6 会话规范/T2 sessionFor 消费）
+      orchestrator: mindOrchestrator,   // 编排器（runPredict 直调面——测试/面板消费；分流面在 runPredictFlow 内）
+      sessionPrefix: KOI_SESSION_PREFIX,   // koi-daily- 前缀单点（§2.6 会话规范：单 Agent koi-daily-<game>-<issue>、编排角色 -<id> 后缀 P15）
     },
     channelsOverview,
     petBridge,        // ADR-0007 桌宠桥接（onEvent 旁路钩子；测试/面板可直调，事件层零耦合）
