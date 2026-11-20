@@ -178,13 +178,14 @@ export function createOrchestrator({
     const stopAt = deadlineOf(now())
     const leftMs = () => stopAt - now().getTime()
 
-    // ── 注入段（≤1 分钟切片；T2 injector 缺位 → 跳过，材料只有 dataPack——§7 渐进装配注记）────
+    // ── 注入段（≤1 分钟切片，零 LLM 本地计算；injector 缺位 → 跳过，材料只有 dataPack——§7 渐进装配）──
     let injectionText = null
     let injectionNote = null
     if (injector) {
       try {
         const inj = injector.assemble({ gameKey, issue })
-        const blocks = trimmer ? trimmer.trimBlocks(inj.blocks ?? [], { capPerRole: 4000 }) : { text: (inj.blocks ?? []).map((b) => b.text).join('\n'), dropped: [] }
+        // trimmer cap 由装配侧读 cfg.budget.overrides.injectionCap（默认 4000——拍板 P3 与预算解耦）
+        const blocks = trimmer ? trimmer.trimBlocks(inj.blocks ?? []) : { text: (inj.blocks ?? []).map((b) => b.text).join('\n'), dropped: [] }
         injectionText = blocks.text || null
         if (!inj.ok) injectionNote = inj.note ?? '本期无记忆注入：注入层返回失败（FR-031 如实标注）'
         if (blocks.dropped?.length) injectionNote = [injectionNote, `注入裁剪丢弃 ${blocks.dropped.length} 块（诚实标注）`].filter(Boolean).join('；')

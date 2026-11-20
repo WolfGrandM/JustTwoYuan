@@ -54,6 +54,8 @@ import { createMonthlyReview } from './review/monthly.js'
 import { createMetering, KOI_SESSION_PREFIX } from './mind/metering.js'   // M3-T1 计量路径 A（FR-045，docs/33 §5.1）
 import { castTierOf } from './mind/agenda.js'                             // M3-T2 档位映射（分流判定；mind 闸在 castTierOf 内——FR-023）
 import { createOrchestrator } from './mind/orchestrator.js'               // M3-T2 编排器（FR-016~021，docs/33 §2.2/§3）
+import { createInjector } from './mind/injector.js'                       // M3-T3 记忆注入 RAG-lite（FR-028~031）
+import { trimBlocks as trimBlocksFn } from './mind/trimmer.js'            // M3-T3 上下文裁剪（拍板 P3 4000/角色）
 import { computeForIssue, attachAttribution } from './review/attribution.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
@@ -324,8 +326,20 @@ export function startKoiScheduler(ctx, opts) {
     return { totals, demo }
   }
 
+  // ── M3-T3 记忆注入装配（docs/33 §2.2 injector.js 行 / §4.4）：RAG-lite 两块（活跃因子+30 期
+  //    局势），源=predictions.json+review.db 可重建（FR-029）；候选过滤 status∈observing/promoted
+  //    （demoted/retired/candidate 永不入注——BC-004/零特权）；失败语义=空 blocks+note 如实永不
+  //    阻塞出号（FR-031）；裁剪 cap 读 cfg.budget.overrides.injectionCap（默认 4000——拍板 P3）。
+  const mindInjector = createInjector({ reviewStore, readPreds, now: nowFn, log })
+  const mindTrimmer = {
+    trimBlocks: (blocks, opts = {}) => trimBlocksFn(blocks, {
+      capPerRole: Number(cfgNow()?.budget?.overrides?.injectionCap) > 0 ? Number(cfgNow().budget.overrides.injectionCap) : 4000,
+      ...opts,
+    }),
+  }
+
   // ── M3-T2 编排器装配（docs/33 §2.2 orchestrator.js 行：DI 全回调注入——判奖/校验/闸经注入
-  //    回调，mind 层零 draws.js/render.js import；injector/trimmer 随 T3 渐进装配传 null）──
+  //    回调，mind 层零 draws.js/render.js import）──
   const mindOrchestrator = createOrchestrator({
     promptAgent,
     validatePicks: (tierId, picks) => validateTierPicks(tierId, picks),   // FZ-2 硬校验单点复用（零重实现——FR-020）
@@ -333,8 +347,8 @@ export function startKoiScheduler(ctx, opts) {
     budgetState: (cfg2) => budgetState(cfg2 ?? cfgNow()),                 // §3.3 四级优先序① cap 二次判定
     reviewStore,
     metering: mindMetering,                                               // T1 计量面（turn 收口对账）
-    injector: null,                                                       // T3 渐进装配
-    trimmer: null,                                                        // T3 渐进装配
+    injector: mindInjector,                                               // M3-T3 记忆注入（渐进装配就位）
+    trimmer: mindTrimmer,                                                 // M3-T3 上下文裁剪
     now: nowFn,
     hhmm: () => hhmm(),                                                   // timeutil 单点经注入（mind 层零 timeutil import）
     workDir,
@@ -1068,10 +1082,21 @@ export function startKoiScheduler(ctx, opts) {
       onSettled: reviewOnSettled,   // T5 观察者（archiveAuthoritative 开关控制；测试/面板可直调）
       proposals: reviewProposals,   // 环 A 探索性提案引擎（收尾批 T2；测试/CLI 可直调 run({period})）
     },
-    mind: {         // M3 渐进装配（T1 计量 + T2 编排；injector 随 T3 并入——docs/33 §7 渐进装配注记）
+    mind: {         // M3 渐进装配（T1 计量 + T2 编排 + T3 注入——docs/33 §7 渐进装配注记）
       metering: mindMetering,       // 计量路径 A（recordStep/reconcileTurn/gate/modeOf/weekByRole 直调面）
       meteringStatus: () => ({ mode: mindMetering.modeOf(), channels: mindMetering.channelsOf() }),   // §2.4：计量口径诚实披露（status 附加字段数据源）
       orchestrator: mindOrchestrator,   // 编排器（runPredict 直调面——测试/面板消费；分流面在 runPredictFlow 内）
+      injector: mindInjector,       // 记忆注入（assemble/stats 直调面——测试/面板消费）
+      /**
+       * M3-T3 条件实装件（docs/33 §2.2 裁决 c，任务书红线）：auto-memory 剥离监听器本批**不实装**。
+       * 裁决依据：市场版未装 dsh-auto-memory，宿主 system-prompt/assemble 无 'memory:index' 段可剥
+       * ——监听器零触发零收益，且段名耦合（§9-R1）风险先行；接口位留空实现（本函数）如实登记，
+       * 真宿主装件后按 H4 方案实装（Spike §2.5 waterfall 监听器 + 段名单点常量 MEMORY_SECTION
+       * 'memory:index' + AC-022 剥离断言 + 运行手册「auto-memory 升级后重跑剥离断言」检查项）。
+       * 注意：剥离监听器不实装 ≠ 注入失败——出号会话当前不吃宿主级注入属现状事实（无 auto-memory），
+       * AC-022 剥离断言转人工检查项（docs/33 §2.4 H4 行），随部署冒烟批定案。
+       */
+      attachMemoryGuard: () => ({ ok: false, skipped: 'not-implemented', reason: '条件实装件（docs/33 §2.2 裁决 c）：未装 dsh-auto-memory 不触发——接口位留空，H4 system-prompt/assemble 剥离监听器随部署冒烟批按需实装（§9-R1 段名耦合防线/AC-022 转人工检查项）' }),
       sessionPrefix: KOI_SESSION_PREFIX,   // koi-daily- 前缀单点（§2.6 会话规范：单 Agent koi-daily-<game>-<issue>、编排角色 -<id> 后缀 P15）
     },
     channelsOverview,
