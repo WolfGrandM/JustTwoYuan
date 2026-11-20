@@ -437,3 +437,54 @@ test('调度器接线·白名单 v1.2 ②：NM 未中奖对账（won=false + nea
     assert.equal(result.won, false, 'won 口径不变：NM 事件仍 won=false（红点不计）')
   } finally { h.sched.stop() }
 })
+
+// ── 白名单 ③（TF-6 第三次豁免修订 v1.4，主人 2026-11-18 拍板 #7，docs/31 §6 第三批）：停购倒计时上桌宠气泡 ──
+
+test('白名单 ③：kind=countdown（won/nearMiss 恒 null）→ 投喂气泡 broadcast text=事件 body；BRIDGE_FEED_KINDS 常量不动（仍仅 result）', async () => {
+  assert.deepEqual([...BRIDGE_FEED_KINDS], ['result'], '③扩面在触发谓词单点（②行同款纪律：常量不动、谓词扩面，ADR-0007 v1.4）')
+  const stub = petStub()
+  const { bridge, logs } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub)
+  const ev = {
+    kind: 'countdown', won: null, nearMiss: null, game: null,
+    body: '⏰【锦鲤 · 停购倒计时】\n离今晚停售还有 30 分钟——要买要趁早，锦鲤的号已经在路上啦！\n今晚开奖：双色球（21:15 开奖）、排列三（21:25 开奖）、福彩3D（21:15 开奖）\n（20:00 停售，各省或有分钟级差异，以当地公告为准）',
+  }
+  assert.deepEqual(await bridge.onEvent(ev), { fed: true }, 'countdown 按 kind 放行（白名单 ③——won/nearMiss 恒 null 不参与判定）')
+  assert.equal(stub.calls.length, 3, 'lock→broadcast→release 全序不变')
+  const fedText = JSON.parse(stub.calls[1].body).text
+  assert.equal(fedText, ev.body, '文本=事件 body 渲染全文（ADR-0007 §6-1）')
+  assert.ok(fedText.includes('离今晚停售还有 30 分钟'), '§4.3 占位原文直达气泡')
+  assert.ok(logs.some((m) => m.includes('停购倒计时已投喂')), '日志按 kind 分流（非「战果」文案）')
+  // 白名单外类别维持零投喂（③只放行 countdown；won/nearMiss 路径仍由 result 门内 ②行管）
+  const stub2 = petStub()
+  const { bridge: b2 } = mkBridge({ ...buildConfigDefaults(), petBridge: { enabled: true } }, stub2)
+  assert.deepEqual(await b2.onEvent({ kind: 'predict', won: null, body: '预测' }), { fed: false, skipped: 'not-winning' })
+  assert.deepEqual(await b2.onEvent({ kind: 'apology', won: null, body: '致歉' }), { fed: false, skipped: 'not-winning' })
+  assert.deepEqual(await b2.onEvent({ kind: 'countdown', won: false, body: '畸形 won 标记不守门——countdown 本就不认 won' }), { fed: true }, 'countdown 不看 won（字段恒 null，kind 即豁免判据）')
+  assert.equal(stub2.calls.length, 3, '仅 countdown 一例产生 HTTP')
+})
+
+test('调度器接线·白名单 ③：19:30 停购倒计时 tick → emit 后旁路投喂全序，broadcast text 含占位原文；panelOnly/won=null 不触红点不入账本', async () => {
+  const pet = petStub()
+  const h = mkHarness({
+    petFetch: pet,
+    now: new Date('2026-10-25T19:30:00'),
+    cfgPatch: {
+      petBridge: { enabled: true, baseUrl: 'http://127.0.0.1:3080/dsh-pet-7340', petId: 'main' },
+      modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'off' }, '3d': { mode: 'off' } },
+    },
+  })
+  try {
+    await h.sched.tick()   // 19:30 停购倒计时段（modes 全 off：无出号无对账干扰——emit 在 tick 内 await，接线确定性）
+    assert.equal(pet.calls.length, 3, '桥接三调用（lock→broadcast→release）')
+    assert.ok(pet.calls[0].url.includes('/lock?pet=main&surface=web'))
+    assert.ok(pet.calls[1].url.includes('/broadcast?pet=main&surface=web&lock=L-1'))
+    assert.ok(JSON.parse(pet.calls[1].body).text.includes('离今晚停售还有 30 分钟'), '倒计时正文直达气泡（白名单 ③）')
+    assert.ok(pet.calls[2].url.includes('/lock/release'))
+    const evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    const cd = evs.find((x) => x.kind === 'countdown')
+    assert.ok(cd, 'countdown 事件落库（panelOnly 载体）')
+    assert.deepEqual(cd.delivery.map((d) => d.channel), ['panel'], 'delivery 仅 panel（桥接不在渠道目录——ADR-0007 §7 旁路形态不变）')
+    assert.equal(cd.won, null, 'won=null：红点/未读口径不变（winUnreadCount 只认 won）')
+    assert.equal(readJson(path.join(h.dataDir, 'ledger.json'), { entries: [] }).entries.length, 0, '账本零变化（BC-006）')
+  } finally { h.sched.stop() }
+})

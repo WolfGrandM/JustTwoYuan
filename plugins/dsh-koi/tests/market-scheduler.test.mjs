@@ -12,6 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { startKoiScheduler, classifyHostError, DEFAULT_NO_MODEL_PATTERNS } from '../lib/scheduler.js'
 import { buildConfigDefaults, buildConfigStamp } from '../lib/config.js'
+import { winUnreadCount } from '../lib/ui-logic.js'
 import { readJson } from '../lib/io.js'
 
 const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'koi-sched-'))
@@ -794,5 +795,82 @@ test('advisory 接线（auto 出号后）：预注册→生成→advice 事件�
     assert.ok(ae.body.includes('不会自动改变你的投注档位'), '固定句恒拼（TF-18 白话化）')
     // 配置隔离断言：advisory 输出永不写 modes.tier（FZ-7——modes.tier 仍是用户配置值）
     assert.equal(readJson(h.configPath).modes.p3.tier, 'p3-x1', '建议不自动改正式档位')
+  } finally { h.sched.stop() }
+})
+
+// ───────────────────────────── 停购倒计时（docs/31 §6 第三批：P12 内容源拍板 #7 = A 停购倒计时，TF-6 第三次豁免 v1.4）─────────────────────────────
+// 全局每日 19:30 一条（当日有开奖彩种才播）；panelOnly 载体 + 桌宠气泡白名单 ③；不入账本不入红点。
+
+const CD_CFG = { advisory: { enabled: false }, modes: { ssq: { mode: 'off' }, dlt: { mode: 'off' }, p3: { mode: 'off' }, '3d': { mode: 'off' } } }
+
+test('停购倒计时·19:30 触发：全局恰一条（幂等守卫）· §4.3 占位原文+倒计时数字+今晚开奖行 · panelOnly/noRetry 事件形状', async () => {
+  const h = mkHarness({ cfgPatch: CD_CFG })   // 默认 now=2026-10-25T17:35（周日：ssq+p3+3d 三彩种开奖）
+  try {
+    await h.sched.tick()   // 17:35：早于 19:30 不触发
+    let evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    assert.equal(evs.filter((e) => e.kind === 'countdown').length, 0, '19:30 前不触发')
+    h.setNow(new Date('2026-10-25T19:30:00'))
+    await h.sched.tick()
+    evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    const cds = evs.filter((e) => e.kind === 'countdown')
+    assert.equal(cds.length, 1, '19:30 恰触发一条（全局每日 1 条，非每彩种 1 条）')
+    const cd = cds[0]
+    // 正文（docs/31 §4.3 占位原文逐字 + 自拟行【主人可改】）
+    const ls = cd.body.split('\n')
+    assert.equal(ls[0], '⏰【锦鲤 · 停购倒计时】')
+    assert.equal(ls[1], '离今晚停售还有 30 分钟——要买要趁早，锦鲤的号已经在路上啦！', '§4.3 占位文案原文逐字（倒计时数字 30 = 20:00−19:30 现算）')
+    assert.equal(ls[2], '今晚开奖：双色球（21:15 开奖）、排列三（21:25 开奖）、福彩3D（21:15 开奖）', '下一期开奖彩种与时刻（gamesForDate+drawAt 开奖日历现算，周日=ssq+p3+3d）')
+    assert.equal(ls[3], '（20:00 停售，各省或有分钟级差异，以当地公告为准）', '停售差异行（docs/31 拍板 #7 注记）')
+    // 事件形状（panelOnly 载体 + 红点口径不变）
+    assert.equal(cd.panelOnly, true, 'TF-6 收敛口径：QQ 等用户渠道不投（review 同款载体）')
+    assert.deepEqual(cd.delivery.map((d) => d.channel), ['panel'], 'delivery 仅 panel 渠道')
+    assert.equal(cd.status, 'sent', 'panel 出厂启用 → 送达')
+    assert.equal(cd.noRetry, true, '时效性内容一次即止（FR-005 例外口径同 quickpick/test——补发的倒计时无意义）')
+    assert.equal(cd.won, null, 'won 恒 null（红点/未读只认 won——倒计时绝不触发 winUnreadCount）')
+    assert.equal(cd.nearMiss, null, 'nearMiss 恒 null（非战果事件）')
+    assert.equal(cd.game, null, '全局事件（非 per-game）')
+    // 幂等：同日再 tick 不重复
+    await h.sched.tick()
+    evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    assert.equal(evs.filter((e) => e.kind === 'countdown').length, 1, '同日第二次 tick 不重复（state.countdownOn 当日守卫，同心跳模式）')
+    assert.equal(readJson(path.join(h.dataDir, 'state.json')).countdownOn, '2026-10-25')
+  } finally { h.sched.stop() }
+})
+
+test('停购倒计时·当日无开奖（休市日）不播：holidays 命中 → 19:30 零播；次日非休市恢复且日历随日期走（P13「当日有开奖彩种才播」）', async () => {
+  const h = mkHarness({ cfgPatch: { ...CD_CFG, holidays: ['2026-10-25'] } })
+  try {
+    h.setNow(new Date('2026-10-25T19:30:00'))
+    await h.sched.tick()
+    let evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    assert.equal(evs.filter((e) => e.kind === 'countdown' && e.at.slice(0, 10) === '2026-10-25').length, 0, '休市日零播（休市无开奖无停售——整段在 !holiday 外跳过）')
+    assert.equal(readJson(path.join(h.dataDir, 'state.json')).countdownOn ?? null, null, '未标记当日已播')
+    // 次日（2026-10-26 周一：dlt+p3+3d 开奖，非休市）恢复播报——每日重置
+    h.setNow(new Date('2026-10-26T19:30:00'))
+    await h.sched.tick()
+    evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    const cds = evs.filter((e) => e.kind === 'countdown' && e.at.slice(0, 10) === '2026-10-26')
+    assert.equal(cds.length, 1, '非休市日恢复：恰一条')
+    assert.ok(cds[0].body.includes('大乐透'), '开奖面随日历现算（周一=dlt+p3+3d，周日=ssq+p3+3d）')
+  } finally { h.sched.stop() }
+})
+
+test('停购倒计时·不入账本不入红点：ledger 零变化 · 出号流水线零触碰 · winUnreadCount 恒 0 · 过停售线不播', async () => {
+  const h = mkHarness({ cfgPatch: CD_CFG })
+  try {
+    h.setNow(new Date('2026-10-25T19:30:00'))
+    await h.sched.tick()
+    assert.equal(fs.existsSync(path.join(h.dataDir, 'ledger.json')), false, 'ledger 零生成（BC-006 账本口径零变化——倒计时不是投注）')
+    const preds = readJson(path.join(h.dataDir, 'predictions.json'), { entries: [] })
+    assert.equal((preds.entries ?? []).length, 0, '不走预测流水线（零 daily 条目）')
+    const cd = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries.find((e) => e.kind === 'countdown')
+    assert.ok(cd, 'countdown 事件在场')
+    assert.equal(cd.won, null, 'won=null 前置')
+    assert.equal(winUnreadCount([{ id: 'c1', kind: 'countdown', won: null }, { id: 'c2', kind: 'predict', won: null }, cd], null), 0, '红点恒 0（winUnreadCount 只认 won===true，主人 2026-10-25 拍板口径零变化）')
+    // 过停售线（20:00）不播：进程缺席整个 19:30–20:00 窗口 → 当日静默（「还有 N 分钟」为假宁缺毋假）
+    h.setNow(new Date('2026-10-27T20:05:00'))   // 周二 ssq+p3+3d 开奖、非休市
+    await h.sched.tick()
+    const evs = readJson(path.join(h.dataDir, 'events.json'), { entries: [] }).entries
+    assert.equal(evs.filter((e) => e.kind === 'countdown' && e.at.slice(0, 10) === '2026-10-27').length, 0, '过停售线静默（时效性内容补发无意义）')
   } finally { h.sched.stop() }
 })
