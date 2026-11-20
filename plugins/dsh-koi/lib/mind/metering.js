@@ -21,7 +21,7 @@
  *
  * BC-001 诚实条款：计量数字只如实记录与披露（mode/channels 落 status 附加字段诚实披露口径），
  * 不修饰、不因计量失败虚构数据（est:true 如实标注估算条目）。
- * BC-008：本模块零因子状态写路径（不 import applyFactorTransition）。
+ * BC-008：本模块零因子状态写路径（不 import 因子状态转移函数——monthly.js 与 veto CLI 唯一持有）。
  */
 import { estTokens } from '../usage.js'
 

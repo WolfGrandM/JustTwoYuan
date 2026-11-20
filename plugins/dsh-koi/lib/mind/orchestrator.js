@@ -42,7 +42,7 @@ const fsSafe = (s) => String(s ?? '').replace(/[^\w.-]+/g, '-')
 
 export function createOrchestrator({
   promptAgent,
-  validatePicks = null,          // (tier, picks) => { ok, picks?, error? }——FZ-2 硬校验单点注入（scheduler 侧 validateTierPicks 复用）
+  validatePicks = null,          // (tier, picks) => { ok, picks?, error? }——FZ-2 硬校验单点注入（scheduler 侧档位校验函数复用，零重实现）
   probabilityClaim = null,       // (text) => bool——BC-001③ 概率宣称闸注入（render.js hasProbabilityClaim 单点）
   budgetState = null,            // (cfg) => { totals, demo }——cap 二次判定（§3.3 四级优先序①）
   reviewStore = null,            // orchestration_log/agenda_versions 写面（BC-002）
@@ -258,7 +258,7 @@ export function createOrchestrator({
         log(`[koi] ${archiveKey} ${step.id} 产出在位（${Math.round(timeoutMs / 1000)}s 切片内）`)
       }
       if (chainBroken) {
-        // 硬停/停机/预算耗尽 → 兜底档（BC-005 照发+透明标注——scheduler 侧 randomTierPicks）
+        // 硬停/停机/预算耗尽 → 兜底档（BC-005 照发+透明标注——随机号由 scheduler 侧随机兜底单点生成，FZ-2）
         return { via: 'fallback', skip: { code: 'session-budget', reason: `有效预算耗尽（25 分钟链/${HARD_STOP_HHMM} 硬停线）` }, castTier: 'fallback', planTier, agendaVersion, roles: rolesOf(produced), strippedRoles, injectionNote, rounds }
       }
       if (!chairFailed && chairKey && produced[chairKey] != null) {
