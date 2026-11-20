@@ -2,7 +2,7 @@
  * dsh-koi 校验公共层（市场版 FR-1017/BC-104）—— 四项校验，自拉底座/增量入库/手动按需三方共用。
  *
  * 四项（docs/14 R8 校验清单）：
- *   ① 期号格式（DC-006：福彩 ssq 7 位数字；体彩 dlt/p3 5 位数字）
+ *   ① 期号格式（DC-006：福彩 ssq/3d 7 位数字；体彩 dlt/p3 5 位数字——3d 福彩通道随 docs/31 §5 第二批）
  *   ② 日期合理性（可解析且不晚于今日）
  *   ③ 号码值域（红 1–33 / 蓝 1–16 / 前 1–35 / 后 1–12 / 位 0–9，且个数与彩种一致）
  *   ④ 连续性（同年相邻期号差 1；跨年重排放行；断档/单调性破坏拒用）
@@ -12,7 +12,7 @@
 import { GAMES } from './draws.js'
 import { todayStr } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
-const ISSUE_RE = { ssq: /^\d{7}$/, dlt: /^\d{5}$/, p3: /^\d{5}$/ }
+const ISSUE_RE = { ssq: /^\d{7}$/, dlt: /^\d{5}$/, p3: /^\d{5}$/, '3d': /^\d{7}$/ }   // 3d 福彩 4 位年+3 位期（与 ssq 同款 7 位，docs/31 §5）
 
 const yearOf = (issue) => {
   const s = String(issue)
@@ -23,7 +23,7 @@ const yearOf = (issue) => {
 function checkEntry(gameKey, e, today) {
   if (!e || typeof e !== 'object') return '条目不是对象'
   if (!ISSUE_RE[gameKey]?.test(String(e.issue ?? ''))) {
-    return `期号格式非法（${gameKey === 'ssq' ? '应为 7 位数字' : '应为 5 位数字'}）：${e.issue}`
+    return `期号格式非法（${gameKey === 'ssq' || gameKey === '3d' ? '应为 7 位数字' : '应为 5 位数字'}）：${e.issue}`
   }
   const d = Date.parse(String(e.date ?? '').slice(0, 10))
   if (Number.isNaN(d)) return `日期不可解析：${e.date}`

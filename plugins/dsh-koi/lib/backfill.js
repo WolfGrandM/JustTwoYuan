@@ -2,7 +2,7 @@
  * dsh-koi 全量回拉引擎（第二波 docs/19 §2，FR-1016 全量回拉部分 / BC-104/105 / BC-012）。
  *
  * 职责（W2-D01：独立模块，不塞 drawstore——drawstore 保持「本地库」单一职责）：
- *   · 分批（福彩期号窗口 / 体彩 pageSize=100+pageNo，分页协议按阶段A冒烟实测定型 W2-D02）
+ *   · 分批（福彩 ssq/3d 期号窗口 / 体彩 pageSize=100+pageNo，分页协议按阶段A冒烟实测定型 W2-D02）
  *   · 限速（批间 batchGapMs 秒级礼貌间隔）、断点续传（checkpoint koi/databackbone.json 每批原子写）
  *   · 退避（单批失败重试 3 次 2s/8s/30s；福彩窗口减半再试一轮，最小 10；体彩直接中止保断点）
  *   · 错峰（启动拒绝 + 运行中跨入 17:00–22:30 暂停待续，22:30 后自动续拉——W2A-07）
@@ -18,6 +18,7 @@ import path from 'node:path'
 import { readJson, writeJsonAtomic } from './io.js'
 import { validateDraws, auditContinuity, crossCheckLatest } from './validate-draws.js'
 import { fetchHistoryPage, fetchLatestDraw } from './fetch-draws.mjs'
+import { GAME_ORDER } from './draws.js'
 import { hhmm as hhmmOf, todayStr } from './timeutil.js'   // T-07：时间工具单点（sv-SE 逐字保持）
 
 const BACKOFF_MS = [2_000, 8_000, 30_000]   // 单批失败重试间隔（指数 + 抖动上限，docs/19 §2.3-5）
@@ -33,6 +34,9 @@ export const inOffpeakWindow = (now) => {
   const t = hhmmOf(now)
   return t >= '17:00' && t < '22:30'
 }
+
+/** 福彩窗口分页游戏集（ssq/3d 同通道 name=…，docs/31 §5 第二批；体彩 dlt/p3 走 pageNo） */
+const isWindowGame = (g) => g === 'ssq' || g === '3d'
 
 /** 福彩 7 位期号跨年步进：windowEnd 落入本年不存在区（末三位 000）→ 跳到上一年年中探针值（§2.3-3） */
 function stepWindowEnd(w) {
@@ -114,9 +118,9 @@ export function createBackfill({
     }
   }
 
-  /** 三彩种顺序跑（CLI/面板入口；单彩种失败不断链，逐项如实汇报） */
+  /** 全彩种顺序跑（CLI/面板入口；单彩种失败不断链，逐项如实汇报） */
   async function runAll({ smoke = false, noOffpeak = false, games } = {}) {
-    const list = Array.isArray(games) && games.length ? games : ['ssq', 'dlt', 'p3']
+    const list = Array.isArray(games) && games.length ? games : [...GAME_ORDER]
     const out = {}
     for (const g of list) out[g] = await run(g, { smoke, noOffpeak })
     return { ok: Object.values(out).every((r) => r.ok), perGame: out }
@@ -133,7 +137,7 @@ export function createBackfill({
 
     const cp = readCp()
     cp.perGame = cp.perGame ?? {}
-    const mode = game === 'ssq' ? 'window' : 'pageNo'
+    const mode = isWindowGame(game) ? 'window' : 'pageNo'
     const pg = cp.perGame[game] ?? {
       done: false, mode, windowEnd: null, nextPageNo: 1, fetchedIssues: 0, targetIssues,
       pages: 0, requests: 0, rejectedTotal: 0, lastBatchAt: null, lastErr: null, progress: null, audit: null,
@@ -145,7 +149,7 @@ export function createBackfill({
 
     // 续拉起点（断点续传，§2.3-3）
     let windowEnd = null
-    if (game === 'ssq') {
+    if (isWindowGame(game)) {
       let oldest = store.oldest(game)
       if (oldest == null) {
         try {
@@ -166,7 +170,7 @@ export function createBackfill({
       }
       windowEnd = stepWindowEnd(Number(oldest) - 1)
     }
-    let nextPageNo = game === 'ssq' ? null : (Number(pg.nextPageNo) > 0 ? Number(pg.nextPageNo) : 1)
+    let nextPageNo = isWindowGame(game) ? null : (Number(pg.nextPageNo) > 0 ? Number(pg.nextPageNo) : 1)
 
     let pagesThisRun = 0
     let emptyStreak = 0
@@ -203,7 +207,7 @@ export function createBackfill({
 
       // 组参数 → 1 次请求
       let page
-      if (game === 'ssq') {
+      if (isWindowGame(game)) {
         page = { window: { issueStart: String(windowEnd - batchSize + 1), issueEnd: String(windowEnd) } }
       } else {
         page = { pageNo: nextPageNo }
@@ -225,7 +229,7 @@ export function createBackfill({
       pagesThisRun += 1
       if (batchErr != null) {
         lastErr = `单批 ${retryMax + 1} 次尝试均失败：${String(batchErr?.message ?? batchErr).slice(0, 160)}`
-        if (game === 'ssq' && batchSize > MIN_SSQ_WINDOW) {
+        if (isWindowGame(game) && batchSize > MIN_SSQ_WINDOW) {
           const narrowed = Math.max(MIN_SSQ_WINDOW, Math.floor(batchSize / 2))
           log(`[koi] backfill ${game} ${lastErr}；窗口减半（${batchSize} → ${narrowed}）再试一轮`)
           batchSize = narrowed
@@ -239,7 +243,7 @@ export function createBackfill({
       const items = Array.isArray(data) ? data : []
       // 空页 → done 判据（§2.4）；福彩跨年步进可能先遇空年段 → 连续 3 空窗才判 done
       if (!items.length) {
-        if (game === 'ssq') {
+        if (isWindowGame(game)) {
           emptyStreak += 1
           if (emptyStreak >= EMPTY_STREAK_DONE) {
             const audit = await auditAndCrossCheck(game, { stoppedAtEmptyStreak: true })
@@ -293,7 +297,7 @@ export function createBackfill({
       pg.lastBatchAt = now().toISOString()
       pg.progress = { note: `已拉至 ${newOldest}`, oldestInStore: String(newOldest) }
 
-      if (game === 'ssq') {
+      if (isWindowGame(game)) {
         const minIssue = Math.min(...items.map((e) => Number(e.issue)))
         windowEnd = stepWindowEnd(minIssue - 1)
         pg.windowEnd = windowEnd

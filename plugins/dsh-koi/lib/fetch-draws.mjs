@@ -3,6 +3,8 @@
  *
  * 数据源（2026-10-23 在国内网络实测可用；体彩接口必须带完整浏览器头，否则回验证页）：
  *   · 双色球：中国福彩官网 findDrawNotice —— 自带每期各奖级单注奖金（对账直接用 ✓）
+ *   · 福彩3D：中国福彩官网 findDrawNotice name=3d —— 与双色球同通道同解析器（docs/31 §5 第二批，
+ *     新增源零新依赖；开奖号同走 red 字段逗号串 → digits 三位，自带奖级奖金表）
  *   · 大乐透：体彩 webapi gameNo=85 —— list 为历史，lastPoolDraw 为最新一期（含奖级）
  *   · 排列三：体彩 webapi gameNo=350133（排列五）—— 排列三开奖号 = 排列五前三位
  *     （3501xx 段没有排列三自己的 gameNo，实测 350128–350133 全空 ✗ 只好走这条路 ✓）
@@ -51,11 +53,18 @@ function parseSportteryPrizes(list) {
 }
 
 // 条目映射（fetchHistory / fetchHistoryPage 共用；URL 与请求头逐字不变——BC-104）
-const mapCwlItem = (it) => ({
+// shape：'ssq'（缺省）= 红/蓝球形态（红按 1–33 滤噪声）；'3d' = 福彩3D 形态——开奖号同走 red 字段
+// 逗号串 → digits 三位（含 0，不套 1–33 红球滤网；位数/值域 0–9 由 validate-draws 四项校验把关，
+// 错形数据在闸门拒用不静默）。奖级逗号金额归一（TF-15#2）两形态同源复用。
+const mapCwlItem = (it, shape = 'ssq') => ({
   issue: String(it.code ?? ''),
   date: String(it.date ?? '').slice(0, 10),
-  red: String(it.red ?? '').split(',').map(Number).filter((x) => x >= 1 && x <= 33),
-  blue: Number(it.blue),
+  ...(shape === '3d'
+    ? { digits: String(it.red ?? '').split(',').map(Number) }
+    : {
+        red: String(it.red ?? '').split(',').map(Number).filter((x) => x >= 1 && x <= 33),
+        blue: Number(it.blue),
+      }),
   prizeGrades: Object.fromEntries((it.prizegrades ?? [])
     .map((p) => [Number(p.type), Number(String(p.typemoney ?? 0).replace(/,/g, ''))])   // TF-15#2：带逗号金额串归一（体彩路径先例；上游改格式不再 NaN 静默丢奖级）
     .filter(([_, m]) => m > 0)),
@@ -74,6 +83,7 @@ const mapSportteryItem = (gameKey) => (it) => {
 /**
  * 抓历史。返回按时间倒序（最新在前）的数组：
  *   ssq { issue, date, red:[6], blue, prizeGrades:{1:…} }
+ *   3d  { issue, date, digits:[3], prizeGrades:{1:…} } （与 ssq 同通道 name=3d，docs/31 §5）
  *   dlt { issue, date, front:[5], back:[2] }          （历史项一般不带奖级，对账走 fetchLatestDraw）
  *   p3  { issue, date, digits:[3] }                   （取排列五前三位）
  */
@@ -82,6 +92,11 @@ export async function fetchHistory(gameKey, count = 30) {
     const j = await jget(`https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueCount=${count}`, CWL_HEADERS)
     const items = Array.isArray(j?.result) ? j.result : []
     return items.map(mapCwlItem)
+  }
+  if (gameKey === '3d') {
+    const j = await jget(`https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=3d&issueCount=${count}`, CWL_HEADERS)
+    const items = Array.isArray(j?.result) ? j.result : []
+    return items.map((it) => mapCwlItem(it, '3d'))
   }
   if (gameKey === 'dlt' || gameKey === 'p3') {
     const gameNo = gameKey === 'dlt' ? 85 : 350133
@@ -98,6 +113,8 @@ export async function fetchHistory(gameKey, count = 30) {
  * 形状与 fetchHistory 同。空页返回 []（backfill done 判据的数据源）。
  *   ssq：  { window: { issueStart, issueEnd } }  → findDrawNotice?name=ssq&issueStart=…&issueEnd=…
  *          （阶段A 冒烟实测：期号区间精确生效；issueEnd 单独传被忽略——必须成对传）
+ *   3d：   { window: { issueStart, issueEnd } }  → findDrawNotice?name=3d&issueStart=…&issueEnd=…
+ *          （与 ssq 同通道同分页协议，docs/31 §5 第二批；期号同样福彩 7 位成对传）
  *   dlt/p3：{ pageNo }                            → getHistoryPageListV1.qry?…&pageSize=100&pageNo=…
  *          （阶段A 冒烟实测：pageSize 上限 100；pageNo 连续翻页不重叠）
  */
@@ -108,6 +125,13 @@ export async function fetchHistoryPage(gameKey, page) {
     const j = await jget(`https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueStart=${w.issueStart}&issueEnd=${w.issueEnd}`, CWL_HEADERS)
     const items = Array.isArray(j?.result) ? j.result : []
     return items.map(mapCwlItem)
+  }
+  if (gameKey === '3d') {
+    const w = page?.window
+    if (!w || w.issueStart == null || w.issueEnd == null) throw new Error('3d 深分页必须成对携带 window.issueStart/issueEnd')
+    const j = await jget(`https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=3d&issueStart=${w.issueStart}&issueEnd=${w.issueEnd}`, CWL_HEADERS)
+    const items = Array.isArray(j?.result) ? j.result : []
+    return items.map((it) => mapCwlItem(it, '3d'))
   }
   if (gameKey === 'dlt' || gameKey === 'p3') {
     if (page?.pageNo == null) throw new Error('体彩深分页必须携带 pageNo')
@@ -122,7 +146,7 @@ export async function fetchHistoryPage(gameKey, page) {
 
 /** 抓最新一期（对账用）：带该期奖级奖金表 */
 export async function fetchLatestDraw(gameKey) {
-  if (gameKey === 'ssq') {
+  if (gameKey === 'ssq' || gameKey === '3d') {
     const [latest] = await fetchHistory(gameKey, 1)
     return latest ?? null
   }

@@ -14,12 +14,15 @@ import { isStaleDraw } from '../lib/scheduler.js'
 const TODAY = '2026-10-25'
 const goodSSQ = { issue: '2026121', date: '2026-10-22', red: [2, 7, 20, 24, 26, 30], blue: 2 }
 
-test('校验①期号格式：ssq 7 位 / 体彩 5 位；非法格式拒用', () => {
+test('校验①期号格式：ssq/3d 7 位 / 体彩 5 位；非法格式拒用', () => {
   const r = validateDraws('ssq', [{ ...goodSSQ, issue: '26121' }], { today: TODAY })
   assert.equal(r.ok, false); assert.match(r.rejected[0].reason, /期号格式/)
   const r2 = validateDraws('dlt', [{ issue: '2026121', date: '2026-10-21', front: [1, 6, 10, 15, 32], back: [3, 4] }], { today: TODAY })
   assert.equal(r2.ok, false)
   assert.equal(validateDraws('p3', [{ issue: '26282', date: '2026-10-23', digits: [6, 4, 7] }], { today: TODAY }).ok, true)
+  assert.equal(validateDraws('3d', [{ issue: '2026322', date: '2026-10-25', digits: [6, 0, 7] }], { today: TODAY }).ok, true, '3d 福彩 7 位期号（docs/31 §5）')
+  const r3 = validateDraws('3d', [{ issue: '26322', date: '2026-10-25', digits: [6, 0, 7] }], { today: TODAY })
+  assert.equal(r3.ok, false); assert.match(r3.rejected[0].reason, /7 位数字/, '3d 体彩形 5 位期号拒用')
 })
 
 test('校验②日期：不可解析/未来日期拒用；正常历史日期放行', () => {
@@ -35,6 +38,8 @@ test('校验③号码值域：红/蓝/前/后/位越界与个数不符逐一拒�
   const dlt = { issue: '26120', date: '2026-10-21', front: [1, 6, 10, 15, 36], back: [3, 4] }
   assert.equal(validateDraws('dlt', [dlt], { today: TODAY }).ok, false, '前区越界 36')
   assert.equal(validateDraws('p3', [{ issue: '26282', date: '2026-10-23', digits: [6, 4, 10] }], { today: TODAY }).ok, false, '位越界')
+  assert.equal(validateDraws('3d', [{ issue: '2026322', date: '2026-10-25', digits: [6, 0, 7] }], { today: TODAY }).ok, true, '3d 位含 0 合法（0–9）')
+  assert.equal(validateDraws('3d', [{ issue: '2026322', date: '2026-10-25', digits: [6, 0] }], { today: TODAY }).ok, false, '3d 位数≠3 拒用')
 })
 
 test('校验④连续性：同年断档拒用；跨年重排放行（2026153→2027001 / 26153→27001）；倒挂拒用；单条/重复处理', () => {
@@ -55,6 +60,12 @@ test('校验④连续性：同年断档拒用；跨年重排放行（2026153→2
     { issue: '2026153', date: '2026-12-31', red: [1, 2, 3, 4, 5, 7], blue: 2 },
   ]
   assert.equal(validateDraws('ssq', crossSSQ, { today: '2027-06-01' }).ok, true, '跨年重排放行')
+  // 3d 福彩 4 位年跨年同规则（docs/31 §5）
+  const cross3D = [
+    { issue: '2027001', date: '2027-01-01', digits: [1, 2, 3] },
+    { issue: '2026365', date: '2026-12-31', digits: [4, 5, 6] },
+  ]
+  assert.equal(validateDraws('3d', cross3D, { today: '2027-06-01' }).ok, true, '3d 跨年重排放行')
   // 体彩 2 位年跨年
   const crossP3 = [
     { issue: '27001', date: '2027-01-01', digits: [1, 2, 3] },

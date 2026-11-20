@@ -10,7 +10,7 @@
  */
 import test, { beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { fetchHistory, fetchHistoryPage } from '../lib/fetch-draws.mjs'
+import { fetchHistory, fetchHistoryPage, fetchLatestDraw } from '../lib/fetch-draws.mjs'
 
 // ── 原始 API 形态夹具（字段名/形态照真实接口，仅数据为金样本同源）────────────────
 const CWL_SSQ_ITEMS = [
@@ -20,6 +20,16 @@ const CWL_SSQ_ITEMS = [
       { type: '1', typemoney: '10000000' },     // 福彩 API 数字串（TF-15#2 起带逗号串也归一，与体彩路径同口径）
       { type: '3', typemoney: '3,000' },        // 带逗号金额串 → 3000（逗号剥离，不再 NaN 静默过滤）
       { type: '9', typemoney: '0' },            // 0 元 → 过滤不出场
+    ],
+  },
+]
+const CWL_3D_ITEMS = [
+  {   // 福彩3D（docs/31 §5）：开奖号同走 red 字段逗号串（含 0，不套 1–33 滤网）；奖级同构（直选 1,040）
+    code: '2026322', date: '2026-10-25 21:15:00', red: '6,0,7', blue: '',
+    prizegrades: [
+      { type: '1', typemoney: '1,040' },        // 直选（带逗号金额串归一，与 ssq 路径同口径）
+      { type: '2', typemoney: '346' },          // 组选三
+      { type: '3', typemoney: '173' },          // 组选六
     ],
   },
 ]
@@ -48,7 +58,10 @@ function stubFetch(handler) {
 }
 
 const installApiStub = () => stubFetch((url) => {
-  if (url.includes('cwl.gov.cn')) return jsonResponse({ result: CWL_SSQ_ITEMS })
+  if (url.includes('cwl.gov.cn')) {
+    if (url.includes('name=3d')) return jsonResponse({ result: CWL_3D_ITEMS })   // 福彩3D 同通道（docs/31 §5 第二批）
+    return jsonResponse({ result: CWL_SSQ_ITEMS })
+  }
   if (url.includes('sporttery.cn')) {
     if (url.includes('gameNo=85')) return jsonResponse({ value: { list: SPORTTERY_DLT_ITEMS } })
     if (url.includes('gameNo=350133')) return jsonResponse({ value: { list: SPORTTERY_P3_ITEMS } })
@@ -76,6 +89,29 @@ test('SSQ 深分页映射与 fetchHistory 同源（window.issueStart/issueEnd �
     issue: '2026121', date: '2026-10-22', red: [2, 7, 20, 24, 26, 30], blue: 2, prizeGrades: { 1: 10_000_000, 3: 3000 },
   })
   await assert.rejects(() => fetchHistoryPage('ssq', { window: { issueStart: '2026100' } }), /issueStart\/issueEnd/)
+})
+
+// ── 福彩3D 映射（docs/31 §5 第二批：与 ssq 同通道 name=3d，digits 形状分支）──────────
+
+test('3D 映射：red 逗号串 → digits 三位（含 0 不套红球滤网）/ 奖级逗号归一同源 / 期号福彩 7 位', async () => {
+  installApiStub()
+  const [it] = await fetchHistory('3d', 30)
+  assert.equal(it.issue, '2026322')
+  assert.equal(it.date, '2026-10-25')
+  assert.deepEqual(it.digits, [6, 0, 7], '含 0 三位（red 字段逗号串直映射，值域 0–9 交 validate-draws 把关）')
+  assert.equal('red' in it && 'blue' in it, false, '3d 条目零 ssq 形状残留字段')
+  assert.deepEqual(it.prizeGrades, { 1: 1040, 2: 346, 3: 173 }, '奖级同源复用（逗号金额归一、0 元过滤）')
+})
+
+test('3D 深分页映射与 fetchHistory 同源（window 成对必传）；fetchLatestDraw 复用 fetchHistory(3d,1)', async () => {
+  installApiStub()
+  const items = await fetchHistoryPage('3d', { window: { issueStart: '2026300', issueEnd: '2026322' } })
+  assert.deepEqual(items[0], { issue: '2026322', date: '2026-10-25', digits: [6, 0, 7], prizeGrades: { 1: 1040, 2: 346, 3: 173 } })
+  await assert.rejects(() => fetchHistoryPage('3d', { window: { issueStart: '2026300' } }), /issueStart\/issueEnd/)
+  await assert.rejects(() => fetchHistoryPage('3d', {}), /issueStart\/issueEnd/)
+  const latest = await fetchLatestDraw('3d')
+  assert.deepEqual(latest.digits, [6, 0, 7], '对账入口 = fetchHistory(3d,1) 同源（带奖级表）')
+  assert.deepEqual(latest.prizeGrades, { 1: 1040, 2: 346, 3: 173 })
 })
 
 // ── mapSportteryItem（dlt 切前 5+2；p3 取排列五前三位——核心切片规则）─────────────
