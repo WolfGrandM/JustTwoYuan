@@ -3,6 +3,12 @@
  * 力度杠杆表、koi 侧轻量 token 计量（koi/token-usage.json，chars/4 保守估算 + est 恒标）、
  * 周度降档链（BC-013 市场版链）、costEstimate 双显示（MB-22：当前形态实际 / M3 满配投影）。
  *
+ * M3-T1 增量（FR-045 计量路径 A / docs/33 §2.5 usage.js 行，全部加法）：
+ *   · record 第三参 extra（role/model/est/分项 token/callRef）——条目结构扩展，旧条目缺字段容忍；
+ *   · weekTotals 增 deliberation 桶（博弈编排新桶，docs/28 §9-R9 先例）；
+ *   · weekByRole()（role 字段聚合——FR-046 角色分项记账面）；
+ *   · reviseLast()（turn 收口对账改标：cancelled turn 的 path-a 条目改 est:true 重估）。
+ *
  * 全部纯函数 + 一个可注入 now 的 tracker（自然周 ISO 周一归档重置，MD-22 保留近 4 周）。
  */
 import path from 'node:path'
@@ -64,23 +70,83 @@ export function createUsageTracker({ dataDir, now = () => new Date(), keepWeeks 
   }
   return {
     fileOf: () => FILE,
-    /** 记一笔估算用量（activity ∈ predict/learning/advisory/review——review 为 M4 复盘叙述/归因叙述，BC-013）；周切换时归档重置 */
-    record(activity, tokens) {
+    /**
+     * 记一笔用量（activity ∈ predict/learning/advisory/review/deliberation——deliberation 为 M3
+     * 博弈编排新桶，docs/33 §5.1：多角色编排路径的全部调用进 deliberation，使 FR-046
+     * 「博弈类内按角色权重分项」有明确桶）。
+     * M3-T1 第三参加法（FR-045/docs/33 §2.5 usage.js 行）：extra = { role?, model?, est?,
+     * promptTokens?, completionTokens?, cacheReadTokens?, cacheWriteTokens?, callRef? }——
+     * 条目结构扩展，旧条目缺字段容忍（DC-009 精神）。未传 extra 的调用面（现状 predict/
+     * learning/advisory/review 单 agent）est 恒标现状口径逐位不变。
+     */
+    record(activity, tokens, extra = {}) {
       const s = ensureWeek(load())
-      s.entries.push({ at: now().toISOString(), activity, tokens: Math.max(0, Math.round(tokens)), est: true })
+      const e = { at: now().toISOString(), activity, tokens: Math.max(0, Math.round(tokens)), est: true }
+      if (extra && typeof extra === 'object') {
+        if (extra.role != null) e.role = String(extra.role)
+        if (extra.model != null) e.model = String(extra.model)
+        if (extra.est != null) e.est = Boolean(extra.est)
+        if (extra.callRef != null) e.callRef = String(extra.callRef)
+        for (const f of ['promptTokens', 'completionTokens', 'cacheReadTokens', 'cacheWriteTokens']) {
+          if (extra[f] != null) e[f] = Math.max(0, Math.round(Number(extra[f])))
+        }
+      }
+      s.entries.push(e)
       writeJsonAtomic(FILE, s)
       return s
     },
-    /** 本周用量 {total, predict, learning, advisory, review, week} */
+    /** 本周用量 {total, predict, learning, advisory, review, deliberation, week}（deliberation 桶 M3-T1 加法，docs/28 §9-R9 先例） */
     weekTotals() {
       const s = ensureWeek(load())
       writeJsonAtomic(FILE, s)   // 周切换时的归档落盘
-      const t = { total: 0, predict: 0, learning: 0, advisory: 0, review: 0, week: s.week }
+      const t = { total: 0, predict: 0, learning: 0, advisory: 0, review: 0, deliberation: 0, week: s.week }
       for (const e of s.entries ?? []) {
         t.total += Number(e.tokens ?? 0)
         if (t[e.activity] != null) t[e.activity] += Number(e.tokens ?? 0)
       }
       return t
+    },
+    /**
+     * 本周按角色分账（M3-T1 weekByRole，FR-046「博弈类内按角色权重分项」的记账面）：
+     * role 字段聚合——无 role 条目（现状单 agent 调用）不进 byRole，如实不入账。
+     * 返回 { week, total, byRole: { <role>: { tokens, steps, estSteps } } }。
+     */
+    weekByRole() {
+      const s = ensureWeek(load())
+      const out = { week: s.week, total: 0, byRole: {} }
+      for (const e of s.entries ?? []) {
+        out.total += Number(e.tokens ?? 0)
+        if (e.role == null) continue
+        const b = out.byRole[e.role] ?? (out.byRole[e.role] = { tokens: 0, steps: 0, estSteps: 0 })
+        b.tokens += Number(e.tokens ?? 0)
+        b.steps += 1
+        if (e.est) b.estSteps += 1
+      }
+      return out
+    },
+    /**
+     * 改标最近一条 callRef 匹配条目（M3-T1 turn 收口对账，docs/33 §5.1：deriveTurnTokenUsage
+     * 返回 undefined（attempt 缺 usage/cancelled mid-stream）→ 已记 path-a 条目改标 est:true
+     * 并按定额重估——BC-013③ 路径 B 兜底覆盖率统计面）。token-usage.json 单写者（koi 独占）
+     * 域内操作，周内条目改标不影响归档（BC-009 三 JSON append-only 红线不涉本文件）。
+     * 未匹配 → null（宁缺毋假，不虚构改标）。
+     */
+    reviseLast({ callRef, est, promptTokens, completionTokens } = {}) {
+      if (callRef == null) return null
+      const s = ensureWeek(load())
+      for (let i = (s.entries?.length ?? 0) - 1; i >= 0; i--) {
+        const e = s.entries[i]
+        if (e.callRef == null || String(e.callRef) !== String(callRef)) continue
+        if (est != null) e.est = Boolean(est)
+        if (promptTokens != null) e.promptTokens = Math.max(0, Math.round(Number(promptTokens)))
+        if (completionTokens != null) e.completionTokens = Math.max(0, Math.round(Number(completionTokens)))
+        if (e.promptTokens != null || e.completionTokens != null) {
+          e.tokens = Number(e.promptTokens ?? 0) + Number(e.completionTokens ?? 0)
+        }
+        writeJsonAtomic(FILE, s)
+        return e
+      }
+      return null
     },
   }
 }

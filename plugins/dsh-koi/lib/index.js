@@ -166,6 +166,7 @@ export default {
       const cfgRaw = readJson(CONFIG_FILE, {}) ?? {}
       st.pet = cfgRaw.pet ?? { enabled: true, corner: 'br' }   // 桌宠开关（关闭则前端不挂载）
       st.donation = cfgRaw.donation ?? null                     // TF-15#4：捐献行展示配置（enabled/text/link/image）
+      st.metering = sched.mind?.meteringStatus?.() ?? null      // M3-T1 计量口径诚实披露（docs/33 §2.4：mode/channels；路由层加法先例同 pet/donation，statusPayload 快照面零 diff）
       json(res, 200, { ...base, ...st })
     })
 

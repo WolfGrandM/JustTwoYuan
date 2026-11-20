@@ -51,6 +51,7 @@ import { createWeeklyReview } from './review/weekly.js'
 import { createHealthScanner } from './review/health.js'
 import { createProposalEngine } from './review/proposal.js'   // 环 A 探索性提案（收尾批 T2）
 import { createMonthlyReview } from './review/monthly.js'
+import { createMetering, KOI_SESSION_PREFIX } from './mind/metering.js'   // M3-T1 计量路径 A（FR-045，docs/33 §5.1）
 import { computeForIssue, attachAttribution } from './review/attribution.js'
 import { readConfig, buildConfigDefaults, modeOf, tierOf, validateConfig, checkGates, buildConfigStamp } from './config.js'
 import { dataPack } from './stats.js'
@@ -151,6 +152,11 @@ export function startKoiScheduler(ctx, opts) {
     },
   })
   const usage = createUsageTracker({ dataDir, now: nowFn })
+  // ── M3-T1 计量路径 A（FR-045/docs/33 §5.1）：feature-detect 三通道构造期探测（H1 流终帧/
+  //    H2 turn 收口/H3 tokenMeter），探测结论如实落 log；全败 = path-b est 定额兜底（计量不阻塞
+  //    主线，ADR-13 双路径设计初衷）。agenda/orchestrator/injector 随 T2/T3 渐进装配（§7 注记）。
+  const mindMetering = createMetering({ ctx, usage, now: nowFn, log })
+  const mindMeteringProbe = mindMetering.attachHostListeners()
   // 桌宠桥接（ADR-0007 §7：emit 后旁路钩子——不进渠道目录/不参与送达与心跳；开关默认 off，
   // dsh-pet 未装/不可达一律静默降级走简易气泡，零报错刷屏；集成深度=won 战果播报 + near-miss 战果播报
   // （ADR-0007 TF-6 白名单修订 v1.2 ②，主人 2026-11-18 拍板 #4：nearMiss 仅 p3 判定产出、BRIDGE_FEED_KINDS 不动）
@@ -273,11 +279,18 @@ export function startKoiScheduler(ctx, opts) {
   }
 
   // ⑧ 无模型错误分类短路：promptAgent 抛错先过 classifyHostError
-  async function promptAgent(text, { activity = 'predict' } = {}) {
+  // M3-T1 形参扩展（docs/33 §2.5 scheduler 行②，默认兼容现状）：{ activity, role, callRef,
+  // sessionId }——sessionId 缺省 = 常驻 koi-lottery（现状逐位）；编排会话（koi-daily-*，T2
+  // sessionFor 每期新开）由调用方先 create 再传入。
+  // 计量路径 A 接线（FR-045）：打标调用（role/callRef 在位）走 metering——直采在位走 path-a
+  // 分账（est:false），缺失走 path-b est 定额兜底；未打标调用面（predict/learning/advisory/
+  // review 现状单 agent）保持 chars/4 est 恒标现状口径逐位不变。
+  async function promptAgent(text, { activity = 'predict', role = null, callRef = null, sessionId: sidIn = null } = {}) {
     await ensureSession()
+    const sid = sidIn ?? sessionId
     try {
       await ctx.sessionController.prompt(
-        { requestId: 'koi-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), sessionId, mode: 'queue', content: [{ type: 'text', text }] },
+        { requestId: 'koi-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), sessionId: sid, mode: 'queue', content: [{ type: 'text', text }] },
         new AbortController().signal,
       )
     } catch (e) {
@@ -285,7 +298,11 @@ export function startKoiScheduler(ctx, opts) {
       if (c.kind === 'no-model') throw new Error(c.hint)
       throw e
     }
-    usage.record(activity, estTokens(text))   // 轻量计量（chars/4 保守估算，est 恒标）
+    if (mindMetering && (role != null || callRef != null)) {
+      mindMetering.recordStep({ activity, role, callRef, sessionId: sid, promptText: text })
+    } else {
+      usage.record(activity, estTokens(text))   // 轻量计量（chars/4 保守估算，est 恒标）
+    }
   }
 
   // ── 预算与降档链（BC-013 市场版链 + BC-107）──────────────────────────────────
@@ -960,6 +977,11 @@ export function startKoiScheduler(ctx, opts) {
       tickView: reviewTickView,
       onSettled: reviewOnSettled,   // T5 观察者（archiveAuthoritative 开关控制；测试/面板可直调）
       proposals: reviewProposals,   // 环 A 探索性提案引擎（收尾批 T2；测试/CLI 可直调 run({period})）
+    },
+    mind: {         // M3 渐进装配（T1 计量面；agenda/orchestrator/injector 随 T2/T3 并入——docs/33 §7 渐进装配注记）
+      metering: mindMetering,       // 计量路径 A（recordStep/reconcileTurn/gate/modeOf/weekByRole 直调面）
+      meteringStatus: () => ({ mode: mindMetering.modeOf(), channels: mindMetering.channelsOf() }),   // §2.4：计量口径诚实披露（status 附加字段数据源）
+      sessionPrefix: KOI_SESSION_PREFIX,   // koi-daily- 前缀单点（§2.6 会话规范/T2 sessionFor 消费）
     },
     channelsOverview,
     petBridge,        // ADR-0007 桌宠桥接（onEvent 旁路钩子；测试/面板可直调，事件层零耦合）
