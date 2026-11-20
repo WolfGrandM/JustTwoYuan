@@ -82,6 +82,25 @@ CREATE TABLE IF NOT EXISTS reports(
   period TEXT, content TEXT, created_at TEXT, event_id TEXT,
   UNIQUE(kind, period));
 
+-- M3-T2 议程版本登记（FR-021/DC-010：versionOf(cfg) stamp + 登记；只加不改不删——schema_version 保持 1，factor_proposals 先例 store.js:66）
+CREATE TABLE IF NOT EXISTS agenda_versions(
+  version TEXT PRIMARY KEY,          -- 'm3:v<n>:<hash8>'（agenda.js versionOf 单点）
+  file_hash TEXT,                    -- prompts 内容 fnv1a（模板常量在 git = ADR-14 市场版落地）
+  activated_at TEXT,                 -- 首次登记时刻（重跑幂等 INSERT OR IGNORE 不覆盖）
+  retired_at TEXT);                  -- 退役时刻（版本切换时填，当前版本恒 NULL）
+
+-- M3-T2 编排全记录（FR-016/BC-002 预注册 append-only：逐角色逐轮只插不改——store 零 UPDATE/DELETE 导出；
+-- 落盘先于开奖核对，BC-002 预注册语义由写入时点结构保证）
+CREATE TABLE IF NOT EXISTS orchestration_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_key TEXT NOT NULL,         -- '<game>|<issue>'（与 predictions_archive 关联键同源；AC-019）
+  role TEXT,                         -- dataOfficer/strategist/provoker/chair
+  round INTEGER,                     -- 轮次（1=提案轮 2=质询轮 3=修订轮 4=定稿轮）
+  at TEXT,                           -- 产出时刻（开奖前一次性写入——BC-002）
+  content TEXT,                      -- 角色产出 JSON 全文（剔除/超时行记标记文本如实不虚构）
+  agenda_version TEXT,               -- 议程版本 stamp（DC-010 归因分段键）
+  call_ref TEXT);                    -- '<archiveKey>#<id>-<round>'（计量 callRef 同源）
+
 -- 触发器①：预注册列禁改（BC-002；date/kind 属业务键同样禁改——§2.2「禁改」注释行覆盖）
 CREATE TRIGGER IF NOT EXISTS archive_prereg_no_update
 BEFORE UPDATE ON predictions_archive
@@ -319,6 +338,40 @@ export function createReviewStore({ dataDir, now = () => new Date(), log = () =>
     .all(...(period ? [String(period)] : []))
     .map((r) => ({ ...r, spec: safeJson(r.spec), errors: safeJson(r.errors), lineage: safeJson(r.lineage) }))
 
+  // ── orchestration_log / agenda_versions（M3-T2 编排记录与议程版本；append-only 只加通道）──
+  /**
+   * 编排一行落表（逐角色逐轮；content=角色产出 JSON 全文或剔除标记文本；append-only——本方法
+   * 只 INSERT，零 UPDATE/DELETE 导出，BC-002 预注册语义）。
+   */
+  function recordOrchestration({ archiveKey, role = null, round = null, content = null, agendaVersion = null, callRef = null, at } = {}) {
+    if (!archiveKey) throw new Error('编排记录缺 archiveKey（AC-019 关联键必填）')
+    const r = db.prepare(`INSERT INTO orchestration_log(archive_key, role, round, at, content, agenda_version, call_ref)
+      VALUES(?,?,?,?,?,?,?)`)
+      .run(String(archiveKey), role, round == null ? null : Number(round), String(at ?? now().toISOString()),
+        content == null || typeof content === 'string' ? content : JSON.stringify(content),
+        agendaVersion, callRef)
+    return { ok: true, id: Number(r.lastInsertRowid) }
+  }
+
+  /** 编排记录清单（面板/测试消费；archiveKey 过滤可选，按写入序返回） */
+  const listOrchestration = (archiveKey = null, limit = 500) => db.prepare(
+    `SELECT id, archive_key AS archiveKey, role, round, at, content, agenda_version AS agendaVersion, call_ref AS callRef
+     FROM orchestration_log ${archiveKey ? 'WHERE archive_key=?' : ''} ORDER BY id ASC LIMIT ?`)
+    .all(...(archiveKey ? [String(archiveKey)] : []), limit)
+
+  /** 议程版本登记（幂等：version PRIMARY KEY——INSERT OR IGNORE 重跑零 diff 不覆盖，FR-021） */
+  function registerAgendaVersion(version, fileHash = null, { at } = {}) {
+    if (!version) throw new Error('议程版本号必填（agenda.js versionOf 单点）')
+    db.prepare(`INSERT OR IGNORE INTO agenda_versions(version, file_hash, activated_at, retired_at)
+      VALUES(?,?,?,NULL)`).run(String(version), fileHash, String(at ?? now().toISOString()))
+    return { ok: true, version: String(version) }
+  }
+
+  /** 议程版本清单（登记序；月报混杂声明与面板消费——FR-021 决定性规则数据源） */
+  const listAgendaVersions = () => db.prepare(
+    `SELECT version, file_hash AS fileHash, activated_at AS activatedAt, retired_at AS retiredAt
+     FROM agenda_versions ORDER BY activated_at ASC, version ASC`).all()
+
   // ── reports（周/月报全文；UNIQUE(kind,period) 幂等守卫）───────────────────────
   function recordReport(kind, period, content, eventId = null) {
     try {
@@ -373,6 +426,7 @@ export function createReviewStore({ dataDir, now = () => new Date(), log = () =>
     upsertArchive, recordAttribution,
     listFactors, applyFactorTransition, resolvePendingPromotions, stateLogOf,
     addCandidateFactor, recordProposal, listProposals,
+    recordOrchestration, listOrchestration, registerAgendaVersion, listAgendaVersions,   // M3-T2 编排记录/议程版本（append-only 只加通道）
     recordReport, getReport, listReports,
     archiveStats, attributionAgg,
   }

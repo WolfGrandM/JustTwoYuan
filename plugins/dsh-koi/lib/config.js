@@ -33,6 +33,7 @@ export function buildConfigTemplate() {
       roleWeights: { strategist: [1.0] },
       overrides: { injectionCap: 4000, perCallCap: null },
     },
+    cast: { tiers: {} },   // M3-T2（docs/33 §2.5 config 行①）：彩种编排档位覆盖（空=默认映射 ssq/dlt='standard'、p3/3d='lite'——拍板 P15 3d 轻量对称；值域 full/standard/lite/single，校验见 validateConfig）
     roles: { strategists: 1, prompts: {} },            // prompts 为 M3 接缝（FR-1007），受 FZ-7 围栏约束
     effort: { tier: 'follow-host' },
     verbosity: 'concise',
@@ -144,6 +145,18 @@ export function validateConfig(cfg) {
     if (b[f] !== undefined && !(Number(b[f]) > 0 && Number(b[f]) < 1)) err(`budget.${f} 必须在 (0,1)`)
   }
   if (b.warn1 != null && b.warn2 != null && !(Number(b.warn1) < Number(b.warn2))) err('budget.warn1 必须小于 warn2')
+
+  // cast.tiers（M3-T2 docs/33 §2.5 config 行④：彩种编排档位覆盖，值域 CAST_TIERS——本地常量
+  // 与 lib/mind/agenda.js CAST_TIERS 同域（config 层不反向 import mind 层），非法值即拒）
+  const CAST_TIERS_V = ['full', 'standard', 'lite', 'single']
+  const ct = cfg.cast?.tiers
+  if (ct !== undefined) {
+    if (ct == null || typeof ct !== 'object' || Array.isArray(ct)) err('cast.tiers 必须是对象（彩种 → 档位覆盖）')
+    else for (const [k, v] of Object.entries(ct)) {
+      if (!GAME_ORDER.includes(k)) err(`cast.tiers.${k} 不是已知彩种（${GAME_ORDER.join('/')}）`)
+      else if (!CAST_TIERS_V.includes(v)) err(`cast.tiers.${k} 必须是 ${CAST_TIERS_V.join('/')} 之一`)
+    }
+  }
 
   // roles（MC-17：strategists 1–4；prompts 仅对象占位，非法类型拒绝——FZ-7 接缝）
   const r = cfg.roles ?? {}
